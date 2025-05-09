@@ -56,16 +56,35 @@ const GmailCredentialsManager: React.FC<GmailCredentialsManagerProps> = ({ phone
     }
   };
 
+  /**
+   * Vérifie si l'email est une adresse Gmail ou Google Workspace valide
+   */
   const isGoogleEmail = (email: string): boolean => {
-    const lowercaseEmail = email.toLowerCase();
-    if (lowercaseEmail.endsWith('@gmail.com') || lowercaseEmail.endsWith('@googlemail.com')) {
-      return true;
-    }
-    
     try {
-      const domain = lowercaseEmail.split('@')[1];
+      if (!email || typeof email !== 'string') {
+        return false;
+      }
+      
+      const lowercaseEmail = email.toLowerCase();
+      
+      // Vérification directe pour les domaines Gmail connus
+      if (lowercaseEmail.endsWith('@gmail.com') || lowercaseEmail.endsWith('@googlemail.com')) {
+        return true;
+      }
+      
+      // Vérification pour les domaines personnalisés de Google Workspace
+      const parts = lowercaseEmail.split('@');
+      if (parts.length !== 2) {
+        return false;
+      }
+      
+      // Note: Ici on pourrait ajouter une vérification plus approfondie pour
+      // les domaines Google Workspace personnalisés, comme un appel API pour
+      // vérifier les enregistrements MX, mais on accepte simplement les domaines
+      // personnalisés sous la responsabilité de l'utilisateur
       return true;
-    } catch {
+    } catch (err) {
+      console.error('Erreur lors de la vérification de l\'email:', err);
       return false;
     }
   };
