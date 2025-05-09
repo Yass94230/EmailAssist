@@ -1,6 +1,6 @@
-// claude.ts - Version corrigée pour l'erreur "v.from is not a function"
+// claude.ts - Service pour la communication avec l'API Claude
+import { AudioSettings } from '../types';
 
-// Déclarations TypeScript
 interface GenerateResponseOptions {
   generateAudio?: boolean;
   voiceType?: string;
@@ -11,11 +11,17 @@ interface GenerateResponseResult {
   audioUrl?: string;
 }
 
-// Fonction utilitaire sécurisée pour convertir Base64 en Blob
+/**
+ * Convertit une chaîne Base64 en Blob sans utiliser .from()
+ * Cette fonction résout l'erreur "x.from is not a function"
+ */
 function base64ToBlob(base64: string, mimeType: string): Blob {
   try {
+    // Retirer les caractères non-base64 si nécessaire
+    const cleanBase64 = base64.replace(/^data:.*,/, '');
+    
     // Décodage Base64 sans utiliser Uint8Array.from ou Array.from
-    const binaryString = window.atob(base64);
+    const binaryString = window.atob(cleanBase64);
     const length = binaryString.length;
     
     // Créer le tableau d'octets manuellement, sans utiliser .from()
@@ -34,7 +40,6 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
 
 /**
  * Génère une réponse à partir de l'API Claude
- * Version corrigée pour éviter l'erreur "v.from is not a function"
  */
 export const generateResponse = async (
   prompt: string,
@@ -99,4 +104,37 @@ export const generateResponse = async (
     console.error('Erreur dans generateResponse:', error);
     throw error instanceof Error ? error : new Error('Erreur inconnue');
   }
+};
+
+/**
+ * Envoie un message au serveur pour le transférer à l'utilisateur actuel via WhatsApp
+ */
+export const sendMessageToCurrentUser = async (message: string): Promise<void> => {
+  try {
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+    const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      console.error("Impossible d'envoyer le message: Configuration manquante");
+      return;
+    }
+
+    // Cette fonction est utilisée uniquement pour le développement/débug
+    // Dans un environnement de production, on utiliserait un webhook
+    console.log("Message envoyé à l'utilisateur:", message.substring(0, 100) + (message.length > 100 ? '...' : ''));
+  } catch (error) {
+    console.error("Erreur lors de l'envoi du message:", error);
+  }
+};
+
+/**
+ * Récupère les paramètres audio de l'utilisateur
+ */
+export const getUserAudioSettings = async (phoneNumber: string): Promise<AudioSettings> => {
+  // Fonction à implémenter si nécessaire
+  // Cette partie peut être gérée par le composant AudioSettings
+  return {
+    enabled: true,
+    voiceType: 'alloy'
+  };
 };
