@@ -1,4 +1,4 @@
-// whatsapp-webhook.ts - Version avec support audio via Claude
+// whatsapp-webhook.ts - Version corrigée pour éviter les erreurs "from is not a function"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -10,6 +10,43 @@ const corsHeaders = {
 const wsClients = new Set();
 
 console.info('WhatsApp Webhook function started');
+
+/**
+ * Convertit un ArrayBuffer en chaîne Base64 sans utiliser Buffer.from
+ * Cette version fonctionne dans Deno et évite les erreurs "from is not a function"
+ */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  
+  return btoa(binary);
+}
+
+/**
+ * Convertit une chaîne Base64 en Blob sans utiliser Buffer.from
+ */
+function base64ToBlob(base64: string, mimeType: string): Blob {
+  try {
+    const cleanBase64 = base64.replace(/^data:.*,/, '');
+    const binaryString = atob(cleanBase64);
+    const length = binaryString.length;
+    
+    const bytes = new Uint8Array(length);
+    for (let i = 0; i < length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    return new Blob([bytes], { type: mimeType });
+  } catch (error) {
+    console.error('Erreur dans base64ToBlob:', error);
+    return new Blob([], { type: mimeType });
+  }
+}
 
 // Fonction pour transcrire un message vocal
 async function transcribeVoiceMessage(mediaUrl: string): Promise<string> {
@@ -26,6 +63,9 @@ async function transcribeVoiceMessage(mediaUrl: string): Promise<string> {
     if (!CLAUDE_API_KEY) {
       throw new Error('Clé API Claude manquante');
     }
+
+    // Convertir l'ArrayBuffer en Base64 sans utiliser Buffer.from
+    const audioBase64 = arrayBufferToBase64(audioBuffer);
 
     const transcriptionRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -45,7 +85,7 @@ async function transcribeVoiceMessage(mediaUrl: string): Promise<string> {
                 source: {
                   type: "base64",
                   media_type: "audio/mp3",
-                  data: Buffer.from(audioBuffer).toString('base64')
+                  data: audioBase64
                 }
               }
             ]
@@ -85,13 +125,15 @@ async function sendWhatsAppMessage(to: string, text: string, audioBase64?: strin
 
   // Si un audio est fourni, l'ajouter comme pièce jointe
   if (audioBase64) {
-    const audioBlob = new Blob([Buffer.from(audioBase64, 'base64')], { type: 'audio/mp3' });
+    // Utiliser la fonction sécurisée au lieu de Buffer.from
+    const audioBlob = base64ToBlob(audioBase64, 'audio/mp3');
     formData.append('MediaUrl', audioBlob, 'message.mp3');
   }
 
   const response = await fetch(twilioEndpoint, {
     method: "POST",
     headers: {
+      // Utiliser le fonction btoa native pour l'encodage Base64
       "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
     },
     body: formData
@@ -105,8 +147,7 @@ async function sendWhatsAppMessage(to: string, text: string, audioBase64?: strin
   return response.json();
 }
 
-// Le reste du code reste identique...
-
+// Le traitement principal de la requête
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
