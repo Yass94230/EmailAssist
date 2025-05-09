@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Menu, X, ChevronDown, ChevronRight, Bell, LogOut, CheckSquare, AlertCircle, Mail, Calendar, Inbox, User, Briefcase } from 'lucide-react';
-import GmailCredentialsManager from '../Account/GmailCredentialsManager';
+import { Menu, X, ChevronDown, ChevronRight, Bell, LogOut, Mail } from 'lucide-react';
+import GmailOAuthManager from '../Account/GmailOAuthManager';
 import AudioSettings from '../Settings/AudioSettings';
 
 interface SidebarProps {
@@ -12,11 +12,10 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ onClose, phoneNumber, onLogout }) => {
   const [expandedSections, setExpandedSections] = useState({
     accounts: true,
-    folders: true,
     settings: false
   });
 
-  const toggleSection = (section: 'accounts' | 'folders' | 'settings') => {
+  const toggleSection = (section: 'accounts' | 'settings') => {
     setExpandedSections(prev => ({
       ...prev,
       [section]: !prev[section]
@@ -66,7 +65,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onClose, phoneNumber, onLogout }) => 
           
           {expandedSections.accounts && (
             <div className="mt-2 space-y-2">
-              <GmailCredentialsManager phoneNumber={phoneNumber} />
+              <GmailOAuthManager phoneNumber={phoneNumber} />
             </div>
           )}
         </div>
