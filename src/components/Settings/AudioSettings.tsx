@@ -16,10 +16,17 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
   const supabase = useSupabaseClient();
   
   useEffect(() => {
-    loadSettings();
+    if (phoneNumber) {
+      loadSettings();
+    }
   }, [phoneNumber]);
   
   const loadSettings = async () => {
+    if (!phoneNumber) return;
+    
+    setIsLoading(true);
+    setError('');
+    
     try {
       const { data, error } = await supabase
         .from('user_settings')
@@ -27,22 +34,33 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
         .eq('phone_number', phoneNumber)
         .single();
         
-      if (error && error.code !== 'PGRST116') {
-        throw error;
+      if (error) {
+        if (error.code !== 'PGRST116') { // Pas de résultat trouvé
+          throw error;
+        }
       }
       
       if (data) {
-        setAudioEnabled(data.audio_enabled);
-        setVoiceType(data.voice_type || 'alloy');
+        // Conversion sécurisée des valeurs booléennes
+        setAudioEnabled(data.audio_enabled === true);
+        // Vérifier si voice_type existe et est une chaîne non vide
+        if (data.voice_type && typeof data.voice_type === 'string') {
+          setVoiceType(data.voice_type);
+        } else {
+          setVoiceType('alloy'); // Valeur par défaut
+        }
       }
     } catch (err) {
       console.error('Erreur lors du chargement des paramètres:', err);
+      setError(err instanceof Error ? err.message : 'Erreur lors du chargement des paramètres');
     } finally {
       setIsLoading(false);
     }
   };
   
   const saveSettings = async () => {
+    if (!phoneNumber) return;
+    
     setError('');
     setSuccess('');
     setIsLoading(true);
@@ -63,6 +81,7 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement');
+      console.error('Erreur lors de l\'enregistrement des paramètres:', err);
     } finally {
       setIsLoading(false);
     }
