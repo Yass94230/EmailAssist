@@ -1,11 +1,7 @@
-// services/gmail.ts - Service pour interagir avec l'API Gmail
 import { supabase } from './supabase';
 
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
-/**
- * Récupère les tokens d'accès pour un numéro de téléphone donné
- */
 export async function getGmailTokens(phoneNumber: string): Promise<{ accessToken: string; email: string } | null> {
   try {
     const { data, error } = await supabase
@@ -49,9 +45,6 @@ export async function getGmailTokens(phoneNumber: string): Promise<{ accessToken
   }
 }
 
-/**
- * Rafraîchit le token d'accès
- */
 async function refreshAccessToken(phoneNumber: string, refreshToken: string): Promise<{ accessToken: string } | null> {
   try {
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/google-refresh`, {

@@ -18,25 +18,6 @@ const GmailOAuthManager: React.FC<GmailOAuthManagerProps> = ({ phoneNumber }) =>
     checkGmailConnection();
   }, [phoneNumber]);
 
-  useEffect(() => {
-    // Check URL parameters for OAuth callback
-    const urlParams = new URLSearchParams(window.location.search);
-    const success = urlParams.get('success');
-    const email = urlParams.get('email');
-    const errorMsg = urlParams.get('error');
-
-    if (success === 'true' && email) {
-      setIsConnected(true);
-      setUserEmail(email);
-      // Clean URL
-      window.history.replaceState({}, '', window.location.pathname);
-    } else if (errorMsg) {
-      setError(decodeURIComponent(errorMsg));
-      // Clean URL
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-  }, []);
-
   const checkGmailConnection = async () => {
     try {
       setIsLoading(true);
@@ -62,7 +43,6 @@ const GmailOAuthManager: React.FC<GmailOAuthManagerProps> = ({ phoneNumber }) =>
       setError(null);
       setIsLoading(true);
 
-      // Get authorization URL from our backend
       const { data, error: urlError } = await supabase
         .functions.invoke('google-auth-url', {
           body: { phoneNumber }
@@ -71,7 +51,6 @@ const GmailOAuthManager: React.FC<GmailOAuthManagerProps> = ({ phoneNumber }) =>
       if (urlError) throw urlError;
       
       if (data?.url) {
-        // Open Google login in the same window
         window.location.href = data.url;
       } else {
         throw new Error('URL d\'autorisation invalide');
