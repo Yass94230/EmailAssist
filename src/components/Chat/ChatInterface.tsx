@@ -5,12 +5,11 @@ import ChatHeader from './ChatHeader';
 import ChatMessage from './ChatMessage';
 import { Button } from '../ui/Button';
 import { Spinner } from '../ui/Spinner';
-import { Alert } from '../ui/Alert';
+import Alert from '../ui/Alert';
 import { Message } from '../../types';
 import { generateResponse } from '../../services/claude';
 import { sendMessageToCurrentUser } from '../../services/whatsapp';
 import { generateEmailConnectionLink } from '../../services/email';
-import { safeBase64Convert } from '../../utils/base64';
 
 interface ChatInterfaceProps {
   phoneNumber: string;
@@ -245,166 +244,166 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         return;
       }
 
-     // Check if the user wants to connect email
-  if (inputValue.toLowerCase().includes('connecter email')) {
-    const connectionLink = await generateEmailConnectionLink(phoneNumber);
-    const response: Message = {
-      id: `msg-${Date.now()}-assistant`,
-      content: `Pour connecter votre compte email, cliquez sur ce lien :\n\n${connectionLink}\n\nCe lien est valable pendant 24 heures et ne peut être utilisé qu'une seule fois pour des raisons de sécurité.`,
-      timestamp: new Date(),
-      direction: 'incoming'
-    };
+      // Check if the user wants to connect email
+      if (inputValue.toLowerCase().includes('connecter email')) {
+        const connectionLink = await generateEmailConnectionLink(phoneNumber);
+        const response: Message = {
+          id: `msg-${Date.now()}-assistant`,
+          content: `Pour connecter votre compte email, cliquez sur ce lien :\n\n${connectionLink}\n\nCe lien est valable pendant 24 heures et ne peut être utilisé qu'une seule fois pour des raisons de sécurité.`,
+          timestamp: new Date(),
+          direction: 'incoming'
+        };
 
-    if (!sentMessagesRef.current.has(response.id)) {
-      setMessages(prev => [...prev, response]);
-      await sendMessageToCurrentUser(response.content);
-      sentMessagesRef.current.add(response.id);
-    }
-    
-    setIsLoading(false);
-    return;
-  }
+        if (!sentMessagesRef.current.has(response.id)) {
+          setMessages(prev => [...prev, response]);
+          await sendMessageToCurrentUser(response.content);
+          sentMessagesRef.current.add(response.id);
+        }
+        
+        setIsLoading(false);
+        return;
+      }
 
-  // Get user settings or create with defaults if they don't exist
-  const { data: settings, error: settingsError } = await supabase
-    .from('user_settings')
-    .select('audio_enabled, voice_recognition_enabled, voice_type')
-    .eq('phone_number', phoneNumber)
-    .maybeSingle();
+      // Get user settings or create with defaults if they don't exist
+      const { data: settings, error: settingsError } = await supabase
+        .from('user_settings')
+        .select('audio_enabled, voice_recognition_enabled, voice_type')
+        .eq('phone_number', phoneNumber)
+        .maybeSingle();
 
-  if (settingsError) {
-    throw new Error('Erreur lors de la récupération des paramètres: ' + settingsError.message);
-  }
+      if (settingsError) {
+        throw new Error('Erreur lors de la récupération des paramètres: ' + settingsError.message);
+      }
 
-  // If no settings exist, create them with defaults
-  if (!settings) {
-    const { error: insertError } = await supabase
-      .from('user_settings')
-      .insert({
-        phone_number: phoneNumber,
-        user_id: user.id,
-        audio_enabled: true,
-        voice_recognition_enabled: true,
-        voice_type: 'alloy'
+      // If no settings exist, create them with defaults
+      if (!settings) {
+        const { error: insertError } = await supabase
+          .from('user_settings')
+          .insert({
+            phone_number: phoneNumber,
+            user_id: user.id,
+            audio_enabled: true,
+            voice_recognition_enabled: true,
+            voice_type: 'alloy'
+          });
+
+        if (insertError) {
+          throw new Error('Erreur lors de la création des paramètres: ' + insertError.message);
+        }
+      }
+
+      const response = await generateResponse(inputValue, {
+        generateAudio: settings?.audio_enabled ?? isAudioEnabled,
+        voiceType: settings?.voice_type ?? voiceType,
+        phoneNumber
       });
-
-    if (insertError) {
-      throw new Error('Erreur lors de la création des paramètres: ' + insertError.message);
+      
+      const assistantMessage: Message = {
+        id: `msg-${Date.now()}-assistant`,
+        content: response.text,
+        timestamp: new Date(),
+        direction: 'incoming',
+        audioUrl: response.audioUrl
+      };
+      
+      // Vérifier si le message n'a pas déjà été envoyé
+      if (!sentMessagesRef.current.has(assistantMessage.id)) {
+        setMessages(prev => [...prev, assistantMessage]);
+        await sendMessageToCurrentUser(response.text);
+        sentMessagesRef.current.add(assistantMessage.id);
+      }
+    } catch (error) {
+      console.error('Error in handleSendMessage:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Une erreur est survenue lors de l\'envoi du message';
+      setError(errorMessage);
+      // Remove the user message if we couldn't process it
+      setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
+      sentMessagesRef.current.delete(userMessage.id);
+    } finally {
+      setIsLoading(false);
     }
-  }
-
-  const response = await generateResponse(inputValue, {
-    generateAudio: settings?.audio_enabled ?? isAudioEnabled,
-    voiceType: settings?.voice_type ?? voiceType,
-    phoneNumber
-  });
-  
-  const assistantMessage: Message = {
-    id: `msg-${Date.now()}-assistant`,
-    content: response.text,
-    timestamp: new Date(),
-    direction: 'incoming',
-    audioUrl: response.audioUrl
   };
   
-  // Vérifier si le message n'a pas déjà été envoyé
-  if (!sentMessagesRef.current.has(assistantMessage.id)) {
-    setMessages(prev => [...prev, assistantMessage]);
-    await sendMessageToCurrentUser(response.text);
-    sentMessagesRef.current.add(assistantMessage.id);
-  }
-} catch (error) {
-  console.error('Error in handleSendMessage:', error);
-  const errorMessage = error instanceof Error ? error.message : 'Une erreur est survenue lors de l\'envoi du message';
-  setError(errorMessage);
-  // Remove the user message if we couldn't process it
-  setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
-  sentMessagesRef.current.delete(userMessage.id);
-} finally {
-  setIsLoading(false);
-}
-};
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
   
-const handleKeyDown = (e: React.KeyboardEvent) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    handleSendMessage();
-  }
-};
-  
-return (
-  <div className="flex flex-col h-full bg-gray-100">
-    <ChatHeader phoneNumber={phoneNumber} />
-    
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
-      {messages.map(message => (
-        <ChatMessage key={message.id} message={message} />
-      ))}
-      <div ref={messagesEndRef} />
-    </div>
-    
-    {error && (
-      <Alert variant="destructive" className="mx-4 mb-4">
-        {error}
-      </Alert>
-    )}
-    
-    <div className="bg-white p-4 border-t border-gray-200">
-      <div className="flex items-end space-x-2">
-        <textarea
-          placeholder="Écrivez votre message..."
-          value={inputValue}
-          onChange={e => setInputValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          className="flex-1 resize-none rounded-lg border border-gray-300 p-2 focus:outline-none focus:ring-2 focus:ring-green-500"
-          rows={1}
-          disabled={isLoading || isRecording}
-        />
-        
-        {isVoiceRecognitionEnabled && (
-          <Button
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={isLoading}
-            className={`p-2 rounded-full ${
-              isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-500 hover:bg-purple-600'
-            }`}
-            title={isRecording ? "Arrêter l'enregistrement" : "Enregistrer un message vocal"}
-          >
-            {isRecording ? (
-              <MicOff size={20} className="text-white" />
-            ) : (
-              <Mic size={20} className="text-white" />
-            )}
-          </Button>
-        )}
-        
-        <Button
-          onClick={handleSendMessage}
-          disabled={isLoading || isRecording || !inputValue.trim()}
-          className="p-2 rounded-full"
-          variant="primary"
-        >
-          {isLoading ? (
-            <Spinner size="sm" className="text-white" />
-          ) : (
-            <Send size={20} />
-          )}
-        </Button>
+  return (
+    <div className="flex flex-col h-full bg-gray-100">
+      <ChatHeader phoneNumber={phoneNumber} />
+      
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.map(message => (
+          <ChatMessage key={message.id} message={message} />
+        ))}
+        <div ref={messagesEndRef} />
       </div>
       
-      {isRecording && (
-        <div className="mt-2 flex items-center justify-center">
-          <div className="animate-pulse flex space-x-1">
-            <div className="h-2 w-2 bg-red-500 rounded-full"></div>
-            <div className="h-2 w-2 bg-red-500 rounded-full"></div>
-            <div className="h-2 w-2 bg-red-500 rounded-full"></div>
-          </div>
-          <span className="ml-2 text-sm text-red-500">Enregistrement en cours...</span>
-        </div>
+      {error && (
+        <Alert variant="error" className="mx-4 mb-4">
+          {error}
+        </Alert>
       )}
+      
+      <div className="bg-white p-4 border-t border-gray-200">
+        <div className="flex items-end space-x-2">
+          <textarea
+            placeholder="Écrivez votre message..."
+            value={inputValue}
+            onChange={e => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="flex-1 resize-none rounded-lg border border-gray-300 p-2 focus:outline-none focus:ring-2 focus:ring-green-500"
+            rows={1}
+            disabled={isLoading || isRecording}
+          />
+          
+          {isVoiceRecognitionEnabled && (
+            <Button
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={isLoading}
+              className={`p-2 rounded-full ${
+                isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-500 hover:bg-purple-600'
+              }`}
+              title={isRecording ? "Arrêter l'enregistrement" : "Enregistrer un message vocal"}
+            >
+              {isRecording ? (
+                <MicOff size={20} className="text-white" />
+              ) : (
+                <Mic size={20} className="text-white" />
+              )}
+            </Button>
+          )}
+          
+          <Button
+            onClick={handleSendMessage}
+            disabled={isLoading || isRecording || !inputValue.trim()}
+            className="p-2 rounded-full"
+            variant="primary"
+          >
+            {isLoading ? (
+              <Spinner size="sm" className="text-white" />
+            ) : (
+              <Send size={20} />
+            )}
+          </Button>
+        </div>
+        
+        {isRecording && (
+          <div className="mt-2 flex items-center justify-center">
+            <div className="animate-pulse flex space-x-1">
+              <div className="h-2 w-2 bg-red-500 rounded-full"></div>
+              <div className="h-2 w-2 bg-red-500 rounded-full"></div>
+              <div className="h-2 w-2 bg-red-500 rounded-full"></div>
+            </div>
+            <span className="ml-2 text-sm text-red-500">Enregistrement en cours...</span>
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
 };
 
 export default ChatInterface;
