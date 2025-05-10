@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Layout from './components/Layout';
 import WhatsAppSetup from './components/WhatsApp/WhatsAppSetup';
+import EmailConnect from './components/Account/EmailConnect';
 
 function App() {
+  const [searchParams] = useSearchParams();
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -26,6 +29,12 @@ function App() {
     localStorage.removeItem('whatsapp_verified');
     setPhoneNumber(null);
   };
+
+  // Si on a un ID de session dans l'URL, afficher la page de connexion email
+  const sessionId = searchParams.get('id');
+  if (sessionId) {
+    return <EmailConnect />;
+  }
 
   if (isLoading) {
     return (
