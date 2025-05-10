@@ -23,44 +23,69 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const session = useSession();
 
+  // Debug log - afficher l'état de la session à chaque rendu
   useEffect(() => {
-    // Récupérer les informations WhatsApp du localStorage
-    const savedNumber = localStorage.getItem('userWhatsAppNumber');
-    const isVerified = localStorage.getItem('whatsapp_verified') === 'true';
-    
-    if (savedNumber && isVerified) {
-      setPhoneNumber(savedNumber);
-    }
-    
-    // Vérifier la session Supabase au chargement
-    const checkSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      console.log("Session au chargement:", data?.session ? "Connecté" : "Non connecté");
+    console.log("Session actuelle:", session ? "Connecté" : "Non connecté");
+    console.log("PhoneNumber:", phoneNumber);
+  }, [session, phoneNumber]);
+
+  useEffect(() => {
+    const checkUserData = async () => {
+      console.log("Vérification des données utilisateur...");
       
-      // Si l'utilisateur est déjà connecté mais n'a pas de configuration WhatsApp
-      if (data?.session && !phoneNumber) {
-        // Vérifier dans la base de données si l'utilisateur a déjà un numéro WhatsApp
-        try {
-          const { data: whatsappData } = await supabase
-            .from('user_whatsapp')
-            .select('phone_number')
-            .eq('user_id', data.session.user.id)
-            .maybeSingle();
+      // Récupérer les informations WhatsApp du localStorage
+      const savedNumber = localStorage.getItem('userWhatsAppNumber');
+      const isVerified = localStorage.getItem('whatsapp_verified') === 'true';
+      
+      console.log("Données localStorage:", { savedNumber, isVerified });
+      
+      if (savedNumber && isVerified) {
+        setPhoneNumber(savedNumber);
+      }
+      
+      // Vérifier la session Supabase
+      const { data } = await supabase.auth.getSession();
+      
+      if (data?.session?.user) {
+        console.log("Utilisateur connecté:", data.session.user.email);
+        
+        // Si l'utilisateur est connecté mais n'a pas de numéro WhatsApp en local
+        if (!savedNumber || !isVerified) {
+          try {
+            console.log("Recherche du numéro WhatsApp dans la base de données...");
             
-          if (whatsappData?.phone_number) {
-            localStorage.setItem('userWhatsAppNumber', whatsappData.phone_number);
-            localStorage.setItem('whatsapp_verified', 'true');
-            setPhoneNumber(whatsappData.phone_number);
+            // Vérifier dans la base de données
+            const { data: whatsappData, error } = await supabase
+              .from('user_whatsapp')
+              .select('phone_number')
+              .eq('user_id', data.session.user.id)
+              .maybeSingle();
+              
+            if (error) {
+              console.error("Erreur lors de la requête:", error);
+            }
+            
+            console.log("Données WhatsApp trouvées:", whatsappData);
+            
+            if (whatsappData?.phone_number) {
+              localStorage.setItem('userWhatsAppNumber', whatsappData.phone_number);
+              localStorage.setItem('whatsapp_verified', 'true');
+              setPhoneNumber(whatsappData.phone_number);
+              
+              console.log("Numéro WhatsApp défini depuis la base de données:", whatsappData.phone_number);
+            }
+          } catch (error) {
+            console.error("Erreur lors de la récupération des données WhatsApp:", error);
           }
-        } catch (error) {
-          console.error("Erreur lors de la récupération des données WhatsApp:", error);
         }
+      } else {
+        console.log("Aucun utilisateur connecté");
       }
       
       setIsLoading(false);
     };
     
-    checkSession();
+    checkUserData();
   }, []);
 
   // Déconnexion
@@ -78,8 +103,9 @@ function App() {
 
   // Fonction de redirection après connexion
   const handleAuthSuccess = () => {
-    console.log("Authentification réussie");
-    window.location.reload(); // Recharger la page pour mettre à jour le contexte de session
+    console.log("Authentification réussie dans App.tsx");
+    
+    // Pas besoin de rediriger ici, nous utilisons window.location.href dans les composants de formulaire
   };
 
   const router = createBrowserRouter([
