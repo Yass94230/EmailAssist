@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
 import { SessionContextProvider } from '@supabase/auth-helpers-react';
 import Layout from './components/Layout';
@@ -58,11 +58,11 @@ function App() {
     },
     {
       path: '/admin',
-      element: <AdminLayout />,
+      element: phoneNumber ? <AdminLayout /> : <Navigate to="/" />,
       children: [
         {
           index: true,
-          element: <Dashboard />,
+          element: <Navigate to="/admin/email" replace />,
         },
         {
           path: 'email',
