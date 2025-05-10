@@ -1,3 +1,4 @@
+// Modification du composant LoginForm.tsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
@@ -26,12 +27,14 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
     setIsLoading(true);
 
     try {
+      // Utilisation de la méthode native de Supabase pour la connexion par email
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
       if (signInError) {
+        // Gestion des erreurs d'authentification Supabase
         if (signInError.message === 'Invalid login credentials') {
           throw new Error('Email ou mot de passe incorrect. Veuillez vérifier vos informations.');
         } else if (signInError.message.includes('Email not confirmed')) {
@@ -44,11 +47,15 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
       if (data?.user) {
         console.log('Connexion réussie:', data.user.email);
         
+        // Stocker des informations utilisateur importantes, comme le numéro de téléphone
+        if (data.user.phone) {
+          localStorage.setItem('userWhatsAppNumber', data.user.phone);
+        }
+        
         // Appeler onSuccess pour informer le parent
         onSuccess();
         
-        // Puis rediriger vers le panneau d'administration
-        console.log('Redirection vers /admin');
+        // Rediriger vers le panneau d'administration
         navigate('/admin');
       } else {
         throw new Error('Une erreur inattendue est survenue. Veuillez réessayer.');
