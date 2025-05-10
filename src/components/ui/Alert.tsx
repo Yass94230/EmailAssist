@@ -1,62 +1,35 @@
+// src/components/ui/Alert.tsx
 import React from 'react';
-import { cn } from '../../utils/cn';
-import { AlertCircle, CheckCircle, Info, XCircle } from 'lucide-react';
 
-type AlertVariant = 'default' | 'destructive' | 'success' | 'warning' | 'error';
+type AlertVariant = 'info' | 'success' | 'warning' | 'error' | 'destructive';
 
-interface AlertProps extends React.HTMLAttributes<HTMLDivElement> {
+interface AlertProps {
+  children: React.ReactNode;
   variant?: AlertVariant;
-  title?: string;
+  className?: string;
 }
 
-const Alert = React.forwardRef<HTMLDivElement, AlertProps>(
-  ({ className = '', variant = 'default', title, children, ...props }, ref) => {
-    const variants: Record<AlertVariant, { container: string; icon: JSX.Element }> = {
-      default: {
-        container: "bg-blue-50 border-blue-200 text-blue-800",
-        icon: <Info className="h-5 w-5 text-blue-500" />
-      },
-      destructive: {
-        container: "bg-red-50 border-red-200 text-red-800",
-        icon: <XCircle className="h-5 w-5 text-red-500" />
-      },
-      success: {
-        container: "bg-green-50 border-green-200 text-green-800",
-        icon: <CheckCircle className="h-5 w-5 text-green-500" />
-      },
-      warning: {
-        container: "bg-yellow-50 border-yellow-200 text-yellow-800",
-        icon: <AlertCircle className="h-5 w-5 text-yellow-500" />
-      },
-      error: {
-        container: "bg-red-50 border-red-200 text-red-800",
-        icon: <XCircle className="h-5 w-5 text-red-500" />
-      }
-    };
+const Alert: React.FC<AlertProps> = ({ 
+  children, 
+  variant = 'info', 
+  className = '' 
+}) => {
+  const variantClasses = {
+    info: 'bg-blue-50 text-blue-800 border-blue-200',
+    success: 'bg-green-50 text-green-800 border-green-200',
+    warning: 'bg-yellow-50 text-yellow-800 border-yellow-200',
+    error: 'bg-red-50 text-red-800 border-red-200',
+    destructive: 'bg-red-50 text-red-800 border-red-200'
+  };
 
-    return (
-      <div
-        ref={ref}
-        role="alert"
-        className={cn(
-          "flex items-start gap-3 rounded-lg border p-4",
-          variants[variant].container,
-          className
-        )}
-        {...props}
-      >
-        {variants[variant].icon}
-        <div className="flex-1">
-          {title && <h5 className="mb-1 font-medium">{title}</h5>}
-          <div className="text-sm">{children}</div>
-        </div>
-      </div>
-    );
-  }
-);
-
-Alert.displayName = "Alert";
-
-export { Alert };
+  return (
+    <div 
+      className={`${variantClasses[variant]} border rounded-md p-4 ${className}`}
+      role="alert"
+    >
+      {children}
+    </div>
+  );
+};
 
 export default Alert;
