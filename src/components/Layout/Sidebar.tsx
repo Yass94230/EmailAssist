@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Menu, X, ChevronDown, ChevronRight, Bell, LogOut, Settings } from 'lucide-react';
+import { Menu, X, ChevronDown, ChevronRight, Bell, LogOut, Settings, Mail } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import AudioSettings from '../Settings/AudioSettings';
-import { Menu, X, ChevronDown, ChevronRight, Bell, LogOut, Settings, Mail } from 'lucide-react';
 
 interface SidebarProps {
   onClose: () => void;
