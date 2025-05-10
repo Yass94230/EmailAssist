@@ -4,6 +4,7 @@ export interface Message {
   timestamp: Date;
   direction: 'incoming' | 'outgoing';
   audioUrl?: string;
+  transcription?: string;  // Ajout du champ pour la transcription audio
 }
 
 export interface EmailRule {
