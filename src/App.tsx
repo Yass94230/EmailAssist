@@ -1,7 +1,5 @@
-// Modification du App.tsx
 import { useState, useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
-import { createClient } from '@supabase/supabase-js';
 import { SessionContextProvider, useSession } from '@supabase/auth-helpers-react';
 import Layout from './components/Layout';
 import AdminLayout from './components/Admin/AdminLayout';
@@ -11,11 +9,10 @@ import WhatsAppConfig from './components/Admin/WhatsAppConfig';
 import AudioConfig from './components/Admin/AudioConfig';
 import EmailConnect from './components/Account/EmailConnect';
 import AuthContainer from './components/Auth/AuthContainer';
-import { supabase } from './services/supabase';  // Utiliser le client supabase exporté
+import { supabase } from './services/supabase';
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
-  const [authCheckComplete, setAuthCheckComplete] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const session = useSession();
 
@@ -45,7 +42,6 @@ function App() {
         setIsAuthenticated(false);
       } finally {
         setIsLoading(false);
-        setAuthCheckComplete(true);
       }
     };
     
@@ -62,12 +58,16 @@ function App() {
         if (session.user.phone) {
           localStorage.setItem('userWhatsAppNumber', session.user.phone);
         }
+        // Rediriger vers /admin après connexion
+        window.location.href = '/admin';
       }
       
       // Si l'utilisateur se déconnecte, supprimer les informations locales
       if (event === 'SIGNED_OUT') {
         console.log("Utilisateur déconnecté");
         localStorage.removeItem('userWhatsAppNumber');
+        // Rediriger vers la page d'accueil après déconnexion
+        window.location.href = '/';
       }
     });
     
@@ -77,30 +77,11 @@ function App() {
     };
   }, []);
 
-  // Déconnexion avec Supabase
-  const handleLogout = async () => {
-    try {
-      console.log("Tentative de déconnexion...");
-      const { error } = await supabase.auth.signOut();
-      
-      if (error) {
-        console.error('Erreur lors de la déconnexion:', error);
-        return;
-      }
-      
-      console.log("Déconnexion réussie");
-      localStorage.removeItem('userWhatsAppNumber');
-      window.location.href = '/';
-    } catch (error) {
-      console.error('Exception lors de la déconnexion:', error);
-    }
-  };
-
   // Fonction de redirection après connexion
   const handleAuthSuccess = () => {
     console.log("Authentification réussie dans App.tsx");
     setIsAuthenticated(true);
-    // La redirection est gérée dans LoginForm/RegisterForm
+    // La redirection est gérée par l'écouteur onAuthStateChange
   };
 
   if (isLoading) {
@@ -152,7 +133,7 @@ function App() {
         },
       ],
     },
-    // Ajouter une route pour la redirection après confirmation d'email
+    // Route pour la redirection après confirmation d'email
     {
       path: '/auth/callback',
       element: <Navigate to="/admin" replace />,
