@@ -71,6 +71,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     sentMessagesRef.current.add(userMessage.id);
     
     try {
+      // Get the current user's ID
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
+        throw new Error('User not authenticated');
+      }
+
       // Check if the user wants to connect email
       if (inputValue.toLowerCase().includes('connecter email')) {
         const connectionLink = await generateEmailConnectionLink(phoneNumber);
@@ -106,6 +113,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
           .from('user_settings')
           .insert({
             phone_number: phoneNumber,
+            user_id: user.id,
             audio_enabled: true,
             voice_type: 'alloy'
           });
