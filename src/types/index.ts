@@ -1,21 +1,11 @@
+import { Database } from './supabase';
+
 export interface Message {
   id: string;
   content: string;
   timestamp: Date;
   direction: 'incoming' | 'outgoing';
   audioUrl?: string;
-}
-
-export interface EmailRule {
-  id: string;
-  name: string;
-  condition: string;
-  action: 'markAsImportant' | 'moveToFolder' | 'markAsRead';
-  parameters?: {
-    folderName?: string;
-    senderEmails?: string[];
-  };
-  isActive: boolean;
 }
 
 export interface EmailMessage {
@@ -50,28 +40,9 @@ export interface EmailAccount {
   avatar?: string;
 }
 
-export interface Folder {
-  id: string;
-  name: string;
-  icon: string;
-  count: number;
-}
-
-export interface UserPreference {
-  id: string;
-  type: 'rule' | 'preference';
-  description: string;
-  active: boolean;
-  deleteAuthorized?: boolean;
-}
-
-export interface TwilioResponse {
-  success: boolean;
-  message: string;
-  sid?: string;
-}
-
 export interface AudioSettings {
   enabled: boolean;
   voiceType: string;
 }
+
+export type { Database };
