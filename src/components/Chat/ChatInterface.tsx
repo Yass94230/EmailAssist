@@ -5,6 +5,7 @@ import ChatHeader from './ChatHeader';
 import ChatMessage from './ChatMessage';
 import { generateResponse } from '../../services/claude';
 import { sendMessageToCurrentUser } from '../../services/whatsapp';
+import { generateEmailConnectionLink } from '../../services/email';
 import { Message } from '../../types';
 
 interface ChatInterfaceProps {
@@ -30,7 +31,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   useEffect(() => {
     const welcomeMessage: Message = {
       id: 'welcome',
-      content: "Bonjour ! Je suis votre assistant email. Je peux vous aider à lire, répondre et gérer vos emails. Comment puis-je vous aider ?",
+      content: "Bonjour ! Je suis votre assistant email. Pour commencer, envoyez 'connecter email' pour configurer votre boîte mail.",
       timestamp: new Date(),
       direction: 'incoming'
     };
@@ -56,6 +57,23 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     setIsLoading(true);
     
     try {
+      // Si l'utilisateur demande de connecter son email
+      if (inputValue.toLowerCase().includes('connecter email')) {
+        const connectionUrl = await generateEmailConnectionLink(phoneNumber);
+        
+        const assistantMessage: Message = {
+          id: `msg-${Date.now()}-assistant`,
+          content: `Pour connecter votre boîte mail, cliquez sur le lien suivant :\n\n${connectionUrl}\n\nCe lien est valable pendant 24 heures et ne peut être utilisé qu'une seule fois pour des raisons de sécurité.`,
+          timestamp: new Date(),
+          direction: 'incoming'
+        };
+        
+        setMessages(prev => [...prev, assistantMessage]);
+        await sendMessageToCurrentUser(assistantMessage.content);
+        return;
+      }
+
+      // Pour les autres messages, utiliser Claude
       const { data: settings } = await supabase
         .from('user_settings')
         .select('audio_enabled, voice_type')
@@ -76,7 +94,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       };
       
       setMessages(prev => [...prev, assistantMessage]);
-      
       await sendMessageToCurrentUser(response.text);
     } catch (error) {
       console.error('Error in handleSendMessage:', error);
