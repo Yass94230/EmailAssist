@@ -8,16 +8,9 @@ const corsHeaders = {
 };
 
 const SYSTEM_PROMPT = `Tu es un assistant email professionnel qui aide à gérer les emails et à rédiger des réponses appropriées. 
-Tu communiques exclusivement en français et tu es basé sur Claude de Anthropic.
-Tu peux :
-- Lire et résumer les emails
-- Rédiger des réponses
-- Rechercher des emails spécifiques
-- Marquer des emails comme lus
-- Déplacer des emails vers des dossiers
-- Gérer les emails prioritaires
-- Analyser les pièces jointes
-Tu dois toujours être professionnel, courtois et efficace dans tes réponses.`;
+Tu communiques exclusivement en français.
+Pour la connexion email, tu dois TOUJOURS utiliser le lien unique généré.
+Tu ne dois JAMAIS mentionner d'URL générique ou demander à l'utilisateur d'aller sur une interface web.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -28,25 +21,51 @@ serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) {
-      throw new Error("Clé API Claude manquante");
-    }
-
-    const { prompt, accessToken, action, emailData, generateAudio = true } = await req.json();
+    const { prompt, phoneNumber, generateAudio = true } = await req.json();
     
     if (!prompt) {
       throw new Error("Le prompt est requis");
     }
 
-    let enhancedPrompt = prompt;
-    if (action && emailData) {
-      enhancedPrompt = `Action demandée: ${action}\nDonnées email: ${JSON.stringify(emailData)}\nRequête: ${prompt}`;
+    // Si l'utilisateur demande de connecter son email
+    if (prompt.toLowerCase().includes('connecter email')) {
+      try {
+        // Générer un lien unique
+        const connectResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/email-connect`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+          },
+          body: JSON.stringify({ phoneNumber })
+        });
+
+        if (!connectResponse.ok) {
+          throw new Error("Erreur lors de la génération du lien de connexion");
+        }
+
+        const { url } = await connectResponse.json();
+        
+        return new Response(
+          JSON.stringify({ 
+            response: `Pour connecter votre compte email, cliquez sur ce lien :\n\n${url}\n\nCe lien est valable pendant 24 heures et ne peut être utilisé qu'une seule fois pour des raisons de sécurité.`
+          }),
+          {
+            headers: { "Content-Type": "application/json", ...corsHeaders },
+          }
+        );
+      } catch (error) {
+        console.error("Erreur lors de la génération du lien:", error);
+        throw error;
+      }
     }
 
-    console.log("Envoi du prompt à Claude:", enhancedPrompt.substring(0, 100) + "...");
+    // Pour les autres requêtes, utiliser l'API Claude
+    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!apiKey) {
+      throw new Error("Clé API Claude manquante");
+    }
 
-    // Générer la réponse textuelle
     const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -59,7 +78,7 @@ serve(async (req) => {
         max_tokens: 1000,
         temperature: 0.7,
         system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: enhancedPrompt }],
+        messages: [{ role: "user", content: prompt }],
       }),
     });
 
@@ -90,7 +109,7 @@ serve(async (req) => {
           body: JSON.stringify({
             model: "claude-3-opus-20240229",
             input: textResponse,
-            voice: "alloy", // Voix par défaut
+            voice: "alloy",
             format: "mp3",
           }),
         });
@@ -100,29 +119,9 @@ serve(async (req) => {
         }
 
         const audioBuffer = await speechRes.arrayBuffer();
-        audioResponse = Buffer.from(audioBuffer).toString('base64');
+        audioResponse = btoa(String.fromCharCode(...new Uint8Array(audioBuffer)));
       } catch (error) {
         console.error("Erreur génération audio:", error);
-        // Continuer sans audio en cas d'erreur
-      }
-    }
-
-    // Si une action Gmail est nécessaire, l'exécuter
-    if (action && accessToken) {
-      const supabaseUrl = Deno.env.get("SUPABASE_URL");
-      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-      
-      if (supabaseUrl && supabaseKey) {
-        const supabase = createClient(supabaseUrl, supabaseKey);
-        
-        await supabase
-          .from('email_actions')
-          .insert({
-            action: action,
-            email_id: emailData?.id,
-            result: textResponse,
-            metadata: emailData
-          });
       }
     }
 

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 interface GenerateResponseOptions {
   generateAudio?: boolean;
   voiceType?: string;
+  phoneNumber?: string;
 }
 
 interface GenerateResponseResult {
@@ -31,6 +32,7 @@ export async function generateResponse(
         prompt,
         generateAudio: options.generateAudio,
         voiceType: options.voiceType,
+        phoneNumber: options.phoneNumber
       }),
     });
 

@@ -5,7 +5,6 @@ import ChatHeader from './ChatHeader';
 import ChatMessage from './ChatMessage';
 import { generateResponse } from '../../services/claude';
 import { sendMessageToCurrentUser } from '../../services/whatsapp';
-import { generateEmailConnectionLink } from '../../services/email';
 import { Message } from '../../types';
 
 interface ChatInterfaceProps {
@@ -57,23 +56,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     setIsLoading(true);
     
     try {
-      // Si l'utilisateur demande de connecter son email
-      if (inputValue.toLowerCase().includes('connecter email')) {
-        const connectionUrl = await generateEmailConnectionLink(phoneNumber);
-        
-        const assistantMessage: Message = {
-          id: `msg-${Date.now()}-assistant`,
-          content: `Pour connecter votre boîte mail, cliquez sur le lien suivant :\n\n${connectionUrl}\n\nCe lien est valable pendant 24 heures et ne peut être utilisé qu'une seule fois pour des raisons de sécurité.`,
-          timestamp: new Date(),
-          direction: 'incoming'
-        };
-        
-        setMessages(prev => [...prev, assistantMessage]);
-        await sendMessageToCurrentUser(assistantMessage.content);
-        return;
-      }
-
-      // Pour les autres messages, utiliser Claude
+      // Récupérer les paramètres audio
       const { data: settings } = await supabase
         .from('user_settings')
         .select('audio_enabled, voice_type')
@@ -82,7 +65,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
 
       const response = await generateResponse(inputValue, {
         generateAudio: settings?.audio_enabled ?? true,
-        voiceType: settings?.voice_type || 'alloy'
+        voiceType: settings?.voice_type || 'alloy',
+        phoneNumber // Ajouter le numéro de téléphone pour la génération du lien
       });
       
       const assistantMessage: Message = {
