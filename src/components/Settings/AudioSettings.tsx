@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Volume2, VolumeX, Mic, Settings2 } from 'lucide-react';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
 import { Database } from '../../types/supabase';
+import Alert from '../ui/Alert';
 
 interface AudioSettingsProps {
   phoneNumber: string;
@@ -11,8 +12,8 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [voiceType, setVoiceType] = useState('alloy');
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   
   const supabase = useSupabaseClient<Database>();
   
@@ -26,7 +27,7 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
     if (!phoneNumber) return;
     
     setIsLoading(true);
-    setError('');
+    setError(null);
     
     try {
       const { data, error } = await supabase
@@ -38,8 +39,8 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
       if (error) throw error;
       
       if (data) {
-        setAudioEnabled(data.audio_enabled === true);
-        if (data.voice_type && typeof data.voice_type === 'string') {
+        setAudioEnabled(data.audio_enabled);
+        if (data.voice_type) {
           setVoiceType(data.voice_type);
         }
       }
@@ -54,8 +55,8 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
   const saveSettings = async () => {
     if (!phoneNumber) return;
     
-    setError('');
-    setSuccess('');
+    setError(null);
+    setSuccess(null);
     setIsLoading(true);
     
     try {
@@ -66,12 +67,12 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
           audio_enabled: audioEnabled,
           voice_type: voiceType,
           updated_at: new Date().toISOString()
-        }, { onConflict: 'phone_number' });
+        });
         
       if (error) throw error;
       
       setSuccess('Paramètres audio enregistrés avec succès');
-      setTimeout(() => setSuccess(''), 3000);
+      setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError('Erreur lors de l\'enregistrement des paramètres audio. Veuillez réessayer.');
       console.error('Erreur lors de l\'enregistrement des paramètres:', err);
@@ -94,15 +95,15 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
       ) : (
         <>
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600">
+            <Alert variant="error" className="mb-4">
               {error}
-            </div>
+            </Alert>
           )}
           
           {success && (
-            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-600">
+            <Alert variant="success" className="mb-4">
               {success}
-            </div>
+            </Alert>
           )}
           
           <div className="space-y-6">
