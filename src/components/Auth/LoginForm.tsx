@@ -1,4 +1,4 @@
-// Modification du composant LoginForm.tsx
+// Modification du LoginForm.tsx avec plus de débogage
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
@@ -17,6 +17,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
   
   const supabase = useSupabaseClient();
   const navigate = useNavigate();
@@ -24,45 +25,59 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setDebugInfo("Tentative de connexion...");
     setIsLoading(true);
 
     try {
-      // Utilisation de la méthode native de Supabase pour la connexion par email
+      console.log("Tentative de connexion avec:", { email });
+      
+      // Utilisation de la méthode native de Supabase pour la connexion
       const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
+      console.log("Réponse de Supabase:", { data, error: signInError });
+      setDebugInfo(`Réponse: ${JSON.stringify({ data: data ? "Données reçues" : "Pas de données", error: signInError }, null, 2)}`);
+
       if (signInError) {
-        // Gestion des erreurs d'authentification Supabase
+        console.error("Erreur Supabase:", signInError);
+        
+        // Messages d'erreur plus détaillés et informatifs
         if (signInError.message === 'Invalid login credentials') {
           throw new Error('Email ou mot de passe incorrect. Veuillez vérifier vos informations.');
         } else if (signInError.message.includes('Email not confirmed')) {
           throw new Error('Veuillez confirmer votre email avant de vous connecter.');
         } else {
-          throw new Error('Une erreur est survenue lors de la connexion. Veuillez réessayer.');
+          throw new Error(`Erreur de connexion: ${signInError.message}`);
         }
       }
 
       if (data?.user) {
         console.log('Connexion réussie:', data.user.email);
+        setDebugInfo("Connexion réussie, préparation de la redirection...");
         
-        // Stocker des informations utilisateur importantes, comme le numéro de téléphone
+        // Stocker des informations utilisateur importantes
         if (data.user.phone) {
           localStorage.setItem('userWhatsAppNumber', data.user.phone);
         }
         
-        // Appeler onSuccess pour informer le parent
+        // Informer le parent
         onSuccess();
         
-        // Rediriger vers le panneau d'administration
-        navigate('/admin');
+        // Temporiser légèrement avant de rediriger
+        setTimeout(() => {
+          console.log("Redirection vers /admin");
+          navigate('/admin');
+        }, 500);
       } else {
-        throw new Error('Une erreur inattendue est survenue. Veuillez réessayer.');
+        setDebugInfo("Données utilisateur vides, problème de session");
+        throw new Error('Session utilisateur introuvable. Veuillez réessayer.');
       }
     } catch (err) {
-      console.error('Erreur de connexion:', err);
+      console.error('Erreur détaillée de connexion:', err);
       setError(err instanceof Error ? err.message : 'Une erreur est survenue lors de la connexion');
+      setDebugInfo(`Erreur: ${err instanceof Error ? err.stack : 'Erreur inconnue'}`);
     } finally {
       setIsLoading(false);
     }
@@ -146,6 +161,13 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
             </button>
           </div>
         </form>
+
+        {/* Zone de débogage (à supprimer en production) */}
+        {debugInfo && (
+          <div className="mt-4 p-3 bg-gray-100 rounded-md text-xs text-gray-700 overflow-auto max-h-40">
+            <pre>{debugInfo}</pre>
+          </div>
+        )}
       </div>
     </div>
   );
