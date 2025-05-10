@@ -17,7 +17,7 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
   const [success, setSuccess] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
-  // Check verification status periodically after registration
+  // Vérifier le statut toutes les 5 secondes après l'envoi de "join"
   useEffect(() => {
     let interval: NodeJS.Timeout;
     
@@ -34,7 +34,7 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
         } catch (error) {
           console.error('Error checking verification:', error);
         }
-      }, 5000); // Check every 5 seconds
+      }, 5000);
     }
 
     return () => {
@@ -55,7 +55,7 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
       
       if (result.success) {
         setSuccess('Pour activer WhatsApp, envoyez "join" au numéro +14155238886');
-        setIsVerifying(true); // Start verification polling
+        setIsVerifying(true); // Démarrer la vérification automatique
       } else {
         setError(result.message);
       }
