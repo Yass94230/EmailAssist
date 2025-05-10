@@ -18,10 +18,25 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   
+  // Utiliser un effet séparé pour la création et la destruction de WaveSurfer
   useEffect(() => {
+    // Uniquement créer WaveSurfer si nous avons un URL audio et un élément DOM pour le contenir
     if (message.audioUrl && waveformRef.current) {
+      // Nettoyer toute instance précédente avant d'en créer une nouvelle
+      if (wavesurferRef.current) {
+        try {
+          wavesurferRef.current.destroy();
+        } catch (e) {
+          console.error("Erreur lors de la destruction de wavesurfer:", e);
+        }
+        wavesurferRef.current = null;
+      }
+      
       try {
-        wavesurferRef.current = WaveSurfer.create({
+        console.log("Création d'une nouvelle instance WaveSurfer");
+        
+        // Création d'une nouvelle instance
+        const wavesurfer = WaveSurfer.create({
           container: waveformRef.current,
           waveColor: isOutgoing ? '#fff' : '#4B5563',
           progressColor: isOutgoing ? '#E5E7EB' : '#374151',
@@ -33,52 +48,82 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
           normalize: true
         });
         
-        wavesurferRef.current.on('ready', () => {
-          setDuration(wavesurferRef.current?.getDuration() || 0);
+        // Configuration des événements
+        wavesurfer.on('ready', () => {
+          console.log("WaveSurfer prêt");
+          setDuration(wavesurfer.getDuration() || 0);
           setIsAudioLoaded(true);
         });
         
-        wavesurferRef.current.on('audioprocess', (time) => {
+        wavesurfer.on('audioprocess', (time) => {
           setCurrentTime(time);
         });
         
-        wavesurferRef.current.on('finish', () => {
+        wavesurfer.on('finish', () => {
           setIsPlaying(false);
         });
         
-        wavesurferRef.current.load(message.audioUrl);
+        wavesurfer.on('error', (err) => {
+          console.error("Erreur WaveSurfer:", err);
+          setIsAudioLoaded(false);
+        });
+        
+        // Charger l'audio
+        wavesurfer.load(message.audioUrl);
+        
+        // Stocker l'instance
+        wavesurferRef.current = wavesurfer;
       } catch (error) {
         console.error('Erreur lors de l\'initialisation de WaveSurfer:', error);
         setIsAudioLoaded(false);
       }
       
+      // Fonction de nettoyage pour l'effet
       return () => {
-        if (wavesurferRef.current) {
-          wavesurferRef.current.destroy();
+        try {
+          console.log("Nettoyage de l'instance WaveSurfer");
+          if (wavesurferRef.current) {
+            wavesurferRef.current.unAll(); // Détacher tous les événements
+            wavesurferRef.current.destroy();
+            wavesurferRef.current = null;
+          }
+        } catch (e) {
+          console.error("Erreur lors du nettoyage de WaveSurfer:", e);
         }
       };
     }
-  }, [message.audioUrl, isOutgoing]);
+    
+    // Si nous n'avons pas d'URL audio ou d'élément DOM, retourner une fonction de nettoyage vide
+    return () => {};
+  }, [message.audioUrl, isOutgoing]); // Dépendances: audioUrl et isOutgoing
   
   const toggleAudio = () => {
     if (wavesurferRef.current && isAudioLoaded) {
-      if (isPlaying) {
-        wavesurferRef.current.pause();
-      } else {
-        wavesurferRef.current.play();
+      try {
+        if (isPlaying) {
+          wavesurferRef.current.pause();
+        } else {
+          wavesurferRef.current.play();
+        }
+        setIsPlaying(!isPlaying);
+      } catch (e) {
+        console.error("Erreur lors de la lecture/pause audio:", e);
       }
-      setIsPlaying(!isPlaying);
     }
   };
   
   const downloadAudio = () => {
     if (message.audioUrl) {
-      const a = document.createElement('a');
-      a.href = message.audioUrl;
-      a.download = `message-audio-${new Date().toISOString()}.mp3`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      try {
+        const a = document.createElement('a');
+        a.href = message.audioUrl;
+        a.download = `message-audio-${new Date().toISOString()}.mp3`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch (e) {
+        console.error("Erreur lors du téléchargement audio:", e);
+      }
     }
   };
   
@@ -90,6 +135,51 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   
   const toggleTranscription = () => {
     setShowTranscription(!showTranscription);
+  };
+  
+  // Simplifier le rendu pour le composant audio
+  const renderAudioPlayer = () => {
+    if (!message.audioUrl) return null;
+    
+    return (
+      <div className={`mt-2 space-y-2 ${
+        isOutgoing ? 'text-white' : 'text-gray-600'
+      }`}>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={toggleAudio}
+            disabled={!isAudioLoaded}
+            variant="ghost"
+            size="sm"
+            className={`p-1 hover:bg-opacity-10 ${!isAudioLoaded ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+          </Button>
+          <Volume2 size={16} />
+          <span className="text-xs">
+            {formatTime(currentTime)} / {formatTime(duration)}
+          </span>
+          {message.direction === 'incoming' && (
+            <MessageSquare size={14} className="ml-auto" title="Message généré par Claude" />
+          )}
+          <Button
+            onClick={downloadAudio}
+            variant="ghost"
+            size="sm"
+            className="p-1 hover:bg-opacity-10"
+            title="Télécharger l'audio"
+          >
+            <Download size={14} />
+          </Button>
+        </div>
+        <div ref={waveformRef} className="w-full" />
+        {!isAudioLoaded && (
+          <p className="text-xs italic opacity-75">
+            Chargement de l'audio...
+          </p>
+        )}
+      </div>
+    );
   };
   
   return (
@@ -124,45 +214,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
         )}
         
         {/* Lecteur audio si disponible */}
-        {message.audioUrl && (
-          <div className={`mt-2 space-y-2 ${
-            isOutgoing ? 'text-white' : 'text-gray-600'
-          }`}>
-            <div className="flex items-center gap-2">
-              <Button
-                onClick={toggleAudio}
-                disabled={!isAudioLoaded}
-                variant="ghost"
-                size="sm"
-                className={`p-1 hover:bg-opacity-10 ${!isAudioLoaded ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-              </Button>
-              <Volume2 size={16} />
-              <span className="text-xs">
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </span>
-              {message.direction === 'incoming' && (
-                <MessageSquare size={14} className="ml-auto" title="Message généré par Claude" />
-              )}
-              <Button
-                onClick={downloadAudio}
-                variant="ghost"
-                size="sm"
-                className="p-1 hover:bg-opacity-10"
-                title="Télécharger l'audio"
-              >
-                <Download size={14} />
-              </Button>
-            </div>
-            <div ref={waveformRef} className="w-full" />
-            {!isAudioLoaded && (
-              <p className="text-xs italic opacity-75">
-                Chargement de l'audio...
-              </p>
-            )}
-          </div>
-        )}
+        {renderAudioPlayer()}
         
         <span className="text-xs opacity-75 block text-right mt-1">
           {message.timestamp.toLocaleTimeString()}
