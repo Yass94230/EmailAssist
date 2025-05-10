@@ -46,14 +46,13 @@ Deno.serve(async (req) => {
         phone_number: phoneNumber,
         session_id: sessionId,
         expires_at: expiresAt.toISOString(),
+        status: 'pending'
       });
 
     if (error) throw error;
 
     // Construire l'URL de connexion
-    const appUrl = Deno.env.get("APP_URL");
-    if (!appUrl) throw new Error("APP_URL non configurée");
-
+    const appUrl = Deno.env.get("APP_URL") || supabaseUrl;
     const connectionUrl = `${appUrl}/connect?id=${sessionId}`;
 
     return new Response(
