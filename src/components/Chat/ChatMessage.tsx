@@ -17,85 +17,97 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   const [showTranscription, setShowTranscription] = useState(false);
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   
-  // Utiliser un effet séparé pour la création et la destruction de WaveSurfer
   useEffect(() => {
-    // Uniquement créer WaveSurfer si nous avons un URL audio et un élément DOM pour le contenir
     if (message.audioUrl && waveformRef.current) {
-      // Nettoyer toute instance précédente avant d'en créer une nouvelle
-      if (wavesurferRef.current) {
-        try {
-          wavesurferRef.current.destroy();
-        } catch (e) {
-          console.error("Erreur lors de la destruction de wavesurfer:", e);
-        }
-        wavesurferRef.current = null;
-      }
+      // Create new AbortController for this effect instance
+      abortControllerRef.current = new AbortController();
       
-      try {
-        console.log("Création d'une nouvelle instance WaveSurfer");
-        
-        // Création d'une nouvelle instance
-        const wavesurfer = WaveSurfer.create({
-          container: waveformRef.current,
-          waveColor: isOutgoing ? '#fff' : '#4B5563',
-          progressColor: isOutgoing ? '#E5E7EB' : '#374151',
-          cursorColor: 'transparent',
-          barWidth: 2,
-          barGap: 3,
-          barRadius: 3,
-          height: 30,
-          normalize: true
-        });
-        
-        // Configuration des événements
-        wavesurfer.on('ready', () => {
-          console.log("WaveSurfer prêt");
-          setDuration(wavesurfer.getDuration() || 0);
-          setIsAudioLoaded(true);
-        });
-        
-        wavesurfer.on('audioprocess', (time) => {
-          setCurrentTime(time);
-        });
-        
-        wavesurfer.on('finish', () => {
-          setIsPlaying(false);
-        });
-        
-        wavesurfer.on('error', (err) => {
-          console.error("Erreur WaveSurfer:", err);
-          setIsAudioLoaded(false);
-        });
-        
-        // Charger l'audio
-        wavesurfer.load(message.audioUrl);
-        
-        // Stocker l'instance
-        wavesurferRef.current = wavesurfer;
-      } catch (error) {
-        console.error('Erreur lors de l\'initialisation de WaveSurfer:', error);
-        setIsAudioLoaded(false);
-      }
-      
-      // Fonction de nettoyage pour l'effet
-      return () => {
-        try {
-          console.log("Nettoyage de l'instance WaveSurfer");
-          if (wavesurferRef.current) {
-            wavesurferRef.current.unAll(); // Détacher tous les événements
+      const cleanupWaveSurfer = async () => {
+        if (wavesurferRef.current) {
+          try {
+            // If the instance is playing, pause it first
+            if (wavesurferRef.current.isPlaying()) {
+              wavesurferRef.current.pause();
+            }
+            
+            // Wait a small delay to ensure any pending operations are complete
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Remove all event listeners
+            wavesurferRef.current.unAll();
+            
+            // Destroy the instance
             wavesurferRef.current.destroy();
             wavesurferRef.current = null;
+          } catch (e) {
+            // Ignore AbortError as it's expected during cleanup
+            if (e instanceof Error && e.name !== 'AbortError') {
+              console.error("Erreur lors du nettoyage de WaveSurfer:", e);
+            }
           }
-        } catch (e) {
-          console.error("Erreur lors du nettoyage de WaveSurfer:", e);
         }
       };
+
+      const initializeWaveSurfer = async () => {
+        await cleanupWaveSurfer();
+        
+        try {
+          const wavesurfer = WaveSurfer.create({
+            container: waveformRef.current!,
+            waveColor: isOutgoing ? '#fff' : '#4B5563',
+            progressColor: isOutgoing ? '#E5E7EB' : '#374151',
+            cursorColor: 'transparent',
+            barWidth: 2,
+            barGap: 3,
+            barRadius: 3,
+            height: 30,
+            normalize: true
+          });
+          
+          wavesurfer.on('ready', () => {
+            setDuration(wavesurfer.getDuration() || 0);
+            setIsAudioLoaded(true);
+          });
+          
+          wavesurfer.on('audioprocess', (time) => {
+            setCurrentTime(time);
+          });
+          
+          wavesurfer.on('finish', () => {
+            setIsPlaying(false);
+          });
+          
+          wavesurfer.on('error', (err) => {
+            console.error("Erreur WaveSurfer:", err);
+            setIsAudioLoaded(false);
+          });
+          
+          // Load audio with the abort signal
+          await wavesurfer.load(message.audioUrl, undefined, abortControllerRef.current?.signal);
+          
+          wavesurferRef.current = wavesurfer;
+        } catch (error) {
+          if (error instanceof Error && error.name !== 'AbortError') {
+            console.error('Erreur lors de l\'initialisation de WaveSurfer:', error);
+            setIsAudioLoaded(false);
+          }
+        }
+      };
+
+      initializeWaveSurfer();
+      
+      return () => {
+        // Abort any pending operations
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+        }
+        // Clean up WaveSurfer
+        cleanupWaveSurfer();
+      };
     }
-    
-    // Si nous n'avons pas d'URL audio ou d'élément DOM, retourner une fonction de nettoyage vide
-    return () => {};
-  }, [message.audioUrl, isOutgoing]); // Dépendances: audioUrl et isOutgoing
+  }, [message.audioUrl, isOutgoing]);
   
   const toggleAudio = () => {
     if (wavesurferRef.current && isAudioLoaded) {
@@ -137,7 +149,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
     setShowTranscription(!showTranscription);
   };
   
-  // Simplifier le rendu pour le composant audio
   const renderAudioPlayer = () => {
     if (!message.audioUrl) return null;
     
@@ -191,10 +202,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
             : 'bg-white text-gray-800 shadow-sm border border-gray-100'
         }`}
       >
-        {/* Afficher le contenu du message */}
         <p className="text-sm whitespace-pre-wrap">{message.content}</p>
         
-        {/* Afficher la transcription si disponible et activée */}
         {message.transcription && (
           <div className="mt-2">
             {showTranscription ? (
@@ -213,7 +222,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
           </div>
         )}
         
-        {/* Lecteur audio si disponible */}
         {renderAudioPlayer()}
         
         <span className="text-xs opacity-75 block text-right mt-1">

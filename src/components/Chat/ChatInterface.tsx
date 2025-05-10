@@ -31,7 +31,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   const sentMessagesRef = useRef<Set<string>>(new Set());
   const supabase = useSupabaseClient();
 
-  // Cleanup MediaRecorder on unmount
   useEffect(() => {
     return () => {
       if (mediaRecorder) {
@@ -56,14 +55,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       direction: 'incoming'
     };
 
-    // Vérifier si le message n'a pas déjà été envoyé
     if (!sentMessagesRef.current.has(welcomeMessage.id)) {
       setMessages([welcomeMessage]);
       sendMessageToCurrentUser(welcomeMessage.content).catch(console.error);
       sentMessagesRef.current.add(welcomeMessage.id);
     }
     
-    // Charger les paramètres audio de l'utilisateur
     loadAudioSettings();
   }, []);
   
@@ -104,15 +101,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         const audioBlob = new Blob(chunks, { type: 'audio/mp3' });
         setAudioChunks(chunks);
         
-        // Convertir en base64 pour l'envoi
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = async () => {
           const base64data = reader.result as string;
-          // Retirer le préfixe "data:audio/mp3;base64,"
           const base64Audio = base64data.split(',')[1];
           
-          // Créer et afficher un message temporaire pour l'audio
           const audioMessage: Message = {
             id: `msg-${Date.now()}-user-audio`,
             content: "Message audio en cours d'envoi...",
@@ -123,7 +117,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
           
           setMessages(prev => [...prev, audioMessage]);
           
-          // Envoyer l'audio à Claude pour traitement
           await handleAudioInput(base64Audio, audioMessage.id);
         };
       };
@@ -139,7 +132,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   const stopRecording = () => {
     if (mediaRecorder && isRecording) {
       mediaRecorder.stop();
-      // Arrêter tous les tracks pour libérer le microphone
       mediaRecorder.stream.getTracks().forEach(track => track.stop());
       setIsRecording(false);
     }
@@ -152,7 +144,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     setIsLoading(true);
     
     try {
-      // Obtenir l'utilisateur actuel
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        throw new Error('Erreur de session: ' + sessionError.message);
+      }
+      
+      if (!sessionData.session) {
+        throw new Error('Session expirée. Veuillez rafraîchir la page et vous reconnecter.');
+      }
+
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       
       if (authError) {
@@ -163,7 +164,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         throw new Error('Session expirée. Veuillez rafraîchir la page et vous reconnecter.');
       }
 
-      // Obtenir une réponse de Claude basée sur l'audio
       const response = await generateResponse("", {
         generateAudio: isAudioEnabled,
         voiceType,
@@ -172,7 +172,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         audioData: audioBase64
       });
       
-      // Mettre à jour le message audio de l'utilisateur avec la transcription
       setMessages(prev => 
         prev.map(msg => 
           msg.id === messageId 
@@ -181,7 +180,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         )
       );
       
-      // Créer le message de réponse de l'assistant
       const assistantMessage: Message = {
         id: `msg-${Date.now()}-assistant`,
         content: response.text,
@@ -190,7 +188,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         audioUrl: response.audioUrl
       };
       
-      // Vérifier si le message n'a pas déjà été envoyé
       if (!sentMessagesRef.current.has(assistantMessage.id)) {
         setMessages(prev => [...prev, assistantMessage]);
         await sendMessageToCurrentUser(response.text);
@@ -201,7 +198,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       const errorMessage = error instanceof Error ? error.message : 'Une erreur est survenue lors du traitement du message audio';
       setError(errorMessage);
       
-      // Mettre à jour le message pour indiquer l'erreur
       setMessages(prev => 
         prev.map(msg => 
           msg.id === messageId 
@@ -226,7 +222,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       direction: 'outgoing'
     };
     
-    // Vérifier si le message n'a pas déjà été envoyé
     if (sentMessagesRef.current.has(userMessage.id)) {
       return;
     }
@@ -237,7 +232,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     sentMessagesRef.current.add(userMessage.id);
     
     try {
-      // Get the current user's ID
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       
       if (authError) {
@@ -247,13 +241,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       if (!user) {
         const authErrorMessage = 'Session expirée. Veuillez rafraîchir la page et vous reconnecter.';
         setError(authErrorMessage);
-        // Remove the user message since we couldn't process it
         setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
         sentMessagesRef.current.delete(userMessage.id);
         return;
       }
 
-      // Check if the user wants to connect email
       if (inputValue.toLowerCase().includes('connecter email')) {
         const connectionLink = await generateEmailConnectionLink(phoneNumber);
         const response: Message = {
@@ -273,7 +265,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         return;
       }
 
-      // Get user settings or create with defaults if they don't exist
       const { data: settings, error: settingsError } = await supabase
         .from('user_settings')
         .select('audio_enabled, voice_recognition_enabled, voice_type')
@@ -284,7 +275,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         throw new Error('Erreur lors de la récupération des paramètres: ' + settingsError.message);
       }
 
-      // If no settings exist, create them with defaults
       if (!settings) {
         const { error: insertError } = await supabase
           .from('user_settings')
@@ -315,7 +305,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         audioUrl: response.audioUrl
       };
       
-      // Vérifier si le message n'a pas déjà été envoyé
       if (!sentMessagesRef.current.has(assistantMessage.id)) {
         setMessages(prev => [...prev, assistantMessage]);
         await sendMessageToCurrentUser(response.text);
@@ -325,7 +314,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       console.error('Error in handleSendMessage:', error);
       const errorMessage = error instanceof Error ? error.message : 'Une erreur est survenue lors de l\'envoi du message';
       setError(errorMessage);
-      // Remove the user message if we couldn't process it
       setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
       sentMessagesRef.current.delete(userMessage.id);
     } finally {
