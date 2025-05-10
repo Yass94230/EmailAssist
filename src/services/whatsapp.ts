@@ -21,7 +21,15 @@ interface SendMessageParams {
 // Register a WhatsApp number
 export const registerWhatsAppNumber = async (phoneNumber: string): Promise<{ success: boolean; message: string }> => {
   try {
-    const result = await saveUserWhatsAppNumber(phoneNumber);
+    // Save to localStorage
+    localStorage.setItem('userWhatsAppNumber', phoneNumber);
+    
+    // Send registration message
+    const result = await sendMessage({
+      to: phoneNumber,
+      message: 'Pour recevoir des messages WhatsApp de notre part, veuillez envoyer le message "join" au numéro +14155238886.'
+    });
+
     return {
       success: result.success,
       message: result.message
@@ -106,65 +114,6 @@ export const verifyWhatsAppNumber = async (phoneNumber: string): Promise<boolean
   } catch (error) {
     console.error('Erreur dans verifyWhatsAppNumber:', error);
     return false;
-  }
-};
-
-// Enregistrer le numéro WhatsApp de l'utilisateur
-export const saveUserWhatsAppNumber = async (phoneNumber: string): Promise<{ success: boolean; message: string; verified: boolean }> => {
-  console.log('Enregistrement du numéro WhatsApp:', phoneNumber);
-  
-  try {
-    // Sauvegarder dans localStorage
-    localStorage.setItem('userWhatsAppNumber', phoneNumber);
-    
-    // Envoyer un message pour demander à l'utilisateur de rejoindre le sandbox
-    const joinMessage = `Pour recevoir des messages WhatsApp de notre part, veuillez envoyer le message "join" au numéro +14155238886.`;
-    
-    const messageResult = await sendMessage({
-      to: phoneNumber,
-      message: joinMessage
-    });
-    
-    if (!messageResult.success) {
-      return {
-        success: false,
-        message: `Erreur lors de l'envoi des instructions: ${messageResult.message}`,
-        verified: false
-      };
-    }
-    
-    // Vérifier après un court délai si le numéro a rejoint
-    setTimeout(async () => {
-      try {
-        // Après 10 secondes, vérifier si le numéro est maintenant vérifié
-        const isVerified = await verifyWhatsAppNumber(phoneNumber);
-        
-        // Mettre à jour le statut dans localStorage
-        if (isVerified) {
-          localStorage.setItem('whatsapp_verified', 'true');
-          
-          // Vous pourriez éventuellement déclencher un événement ou mettre à jour l'état ici
-          window.dispatchEvent(new CustomEvent('whatsapp_verified', { 
-            detail: { phoneNumber, verified: true } 
-          }));
-        }
-      } catch (error) {
-        console.error('Erreur lors de la vérification automatique:', error);
-      }
-    }, 10000); // Vérifier après 10 secondes
-    
-    return {
-      success: true,
-      message: 'Instructions de vérification envoyées. Vérification automatique en cours...',
-      verified: false
-    };
-  } catch (error) {
-    console.error('Erreur dans saveUserWhatsAppNumber:', error);
-    return {
-      success: false,
-      message: error instanceof Error ? error.message : 'Erreur inconnue lors de l\'enregistrement du numéro',
-      verified: false
-    };
   }
 };
 

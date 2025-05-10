@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
@@ -15,23 +15,53 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  // Check verification status periodically after registration
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (isVerifying && phoneNumber) {
+      interval = setInterval(async () => {
+        try {
+          const isVerified = await verifyWhatsAppNumber(phoneNumber);
+          if (isVerified) {
+            localStorage.setItem('whatsapp_verified', 'true');
+            localStorage.setItem('userWhatsAppNumber', phoneNumber);
+            setIsVerifying(false);
+            onSetup(phoneNumber);
+          }
+        } catch (error) {
+          console.error('Error checking verification:', error);
+        }
+      }, 5000); // Check every 5 seconds
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [isVerifying, phoneNumber, onSetup]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
-      await registerWhatsAppNumber(phoneNumber);
-      const isVerified = await verifyWhatsAppNumber(phoneNumber);
-
-      if (isVerified) {
-        onSetup(phoneNumber);
-      } else {
+      const result = await registerWhatsAppNumber(phoneNumber);
+      
+      if (result.success) {
         setSuccess('Pour activer WhatsApp, envoyez "join" au numéro +14155238886');
+        setIsVerifying(true); // Start verification polling
+      } else {
+        setError(result.message);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement');
+      setIsVerifying(false);
     } finally {
       setIsLoading(false);
     }
@@ -66,7 +96,7 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
               onChange={(e) => setPhoneNumber(e.target.value)}
               placeholder="+33612345678"
               required
-              disabled={isLoading}
+              disabled={isLoading || isVerifying}
             />
             <p className="mt-1 text-sm text-gray-500">
               Format international (ex: +33612345678)
@@ -75,13 +105,18 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
 
           <Button
             type="submit"
-            disabled={isLoading}
+            disabled={isLoading || isVerifying}
             className="w-full"
           >
             {isLoading ? (
               <>
                 <Spinner size="sm" className="mr-2" />
                 Enregistrement...
+              </>
+            ) : isVerifying ? (
+              <>
+                <Spinner size="sm" className="mr-2" />
+                Vérification en cours...
               </>
             ) : (
               'Configurer WhatsApp'
