@@ -24,15 +24,46 @@ function App() {
   const session = useSession();
 
   useEffect(() => {
+    // Récupérer les informations WhatsApp du localStorage
     const savedNumber = localStorage.getItem('userWhatsAppNumber');
     const isVerified = localStorage.getItem('whatsapp_verified') === 'true';
     
     if (savedNumber && isVerified) {
       setPhoneNumber(savedNumber);
     }
-    setIsLoading(false);
+    
+    // Vérifier la session Supabase au chargement
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      console.log("Session au chargement:", data?.session ? "Connecté" : "Non connecté");
+      
+      // Si l'utilisateur est déjà connecté mais n'a pas de configuration WhatsApp
+      if (data?.session && !phoneNumber) {
+        // Vérifier dans la base de données si l'utilisateur a déjà un numéro WhatsApp
+        try {
+          const { data: whatsappData } = await supabase
+            .from('user_whatsapp')
+            .select('phone_number')
+            .eq('user_id', data.session.user.id)
+            .maybeSingle();
+            
+          if (whatsappData?.phone_number) {
+            localStorage.setItem('userWhatsAppNumber', whatsappData.phone_number);
+            localStorage.setItem('whatsapp_verified', 'true');
+            setPhoneNumber(whatsappData.phone_number);
+          }
+        } catch (error) {
+          console.error("Erreur lors de la récupération des données WhatsApp:", error);
+        }
+      }
+      
+      setIsLoading(false);
+    };
+    
+    checkSession();
   }, []);
 
+  // Déconnexion
   const handleLogout = async () => {
     try {
       await signOut();
@@ -41,15 +72,21 @@ function App() {
       setPhoneNumber(null);
       window.location.href = '/';
     } catch (error) {
-      console.error('Error during logout:', error);
+      console.error('Erreur lors de la déconnexion:', error);
     }
+  };
+
+  // Fonction de redirection après connexion
+  const handleAuthSuccess = () => {
+    console.log("Authentification réussie");
+    window.location.reload(); // Recharger la page pour mettre à jour le contexte de session
   };
 
   const router = createBrowserRouter([
     {
       path: '/',
       element: !session ? (
-        <AuthContainer onSuccess={() => window.location.reload()} />
+        <AuthContainer onSuccess={handleAuthSuccess} />
       ) : !phoneNumber ? (
         <WhatsAppSetup onSetup={setPhoneNumber} />
       ) : (
