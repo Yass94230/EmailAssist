@@ -1,11 +1,11 @@
-// Modification du LoginForm.tsx avec plus de débogage
+// src/components/Auth/LoginForm.tsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSupabaseClient } from '@supabase/auth-helpers-react';
 import { Mail, Lock, LogIn } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Alert } from '../ui/Alert';
+import { signInWithEmail } from '../../services/supabase'; // Importer la fonction directement
 
 interface LoginFormProps {
   onSuccess: () => void;
@@ -17,67 +17,52 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState<string | null>(null);
   
-  const supabase = useSupabaseClient();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setDebugInfo("Tentative de connexion...");
     setIsLoading(true);
 
     try {
-      console.log("Tentative de connexion avec:", { email });
+      console.log("Tentative de connexion avec:", email);
       
-      // Utilisation de la méthode native de Supabase pour la connexion
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password
-      });
+      // Utiliser la fonction importée
+      const authData = await signInWithEmail(email, password);
 
-      console.log("Réponse de Supabase:", { data, error: signInError });
-      setDebugInfo(`Réponse: ${JSON.stringify({ data: data ? "Données reçues" : "Pas de données", error: signInError }, null, 2)}`);
-
-      if (signInError) {
-        console.error("Erreur Supabase:", signInError);
-        
-        // Messages d'erreur plus détaillés et informatifs
-        if (signInError.message === 'Invalid login credentials') {
-          throw new Error('Email ou mot de passe incorrect. Veuillez vérifier vos informations.');
-        } else if (signInError.message.includes('Email not confirmed')) {
-          throw new Error('Veuillez confirmer votre email avant de vous connecter.');
-        } else {
-          throw new Error(`Erreur de connexion: ${signInError.message}`);
-        }
-      }
-
-      if (data?.user) {
-        console.log('Connexion réussie:', data.user.email);
-        setDebugInfo("Connexion réussie, préparation de la redirection...");
+      if (authData?.user) {
+        console.log('Connexion réussie:', authData.user.email);
         
         // Stocker des informations utilisateur importantes
-        if (data.user.phone) {
-          localStorage.setItem('userWhatsAppNumber', data.user.phone);
+        if (authData.user.phone) {
+          localStorage.setItem('userWhatsAppNumber', authData.user.phone);
         }
         
-        // Informer le parent
+        // Appeler onSuccess pour informer le parent
         onSuccess();
         
-        // Temporiser légèrement avant de rediriger
-        setTimeout(() => {
-          console.log("Redirection vers /admin");
-          navigate('/admin');
-        }, 500);
+        // Rediriger vers le panneau d'administration
+        console.log("Redirection vers /admin");
+        navigate('/admin');
       } else {
-        setDebugInfo("Données utilisateur vides, problème de session");
         throw new Error('Session utilisateur introuvable. Veuillez réessayer.');
       }
     } catch (err) {
-      console.error('Erreur détaillée de connexion:', err);
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue lors de la connexion');
-      setDebugInfo(`Erreur: ${err instanceof Error ? err.stack : 'Erreur inconnue'}`);
+      console.error('Erreur de connexion:', err);
+      
+      // Message d'erreur convivial
+      if (err instanceof Error) {
+        if (err.message.includes('Invalid login credentials')) {
+          setError('Email ou mot de passe incorrect');
+        } else if (err.message.includes('Email not confirmed')) {
+          setError('Veuillez confirmer votre email avant de vous connecter');
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError('Une erreur est survenue lors de la connexion');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -161,13 +146,6 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
             </button>
           </div>
         </form>
-
-        {/* Zone de débogage (à supprimer en production) */}
-        {debugInfo && (
-          <div className="mt-4 p-3 bg-gray-100 rounded-md text-xs text-gray-700 overflow-auto max-h-40">
-            <pre>{debugInfo}</pre>
-          </div>
-        )}
       </div>
     </div>
   );
