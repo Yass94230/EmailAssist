@@ -1,17 +1,5 @@
 // src/services/whatsapp.ts
-
-// Configuration
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-// Vérification des variables d'environnement
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error('Variables d\'environnement manquantes:', {
-    SUPABASE_URL: !!SUPABASE_URL,
-    SUPABASE_ANON_KEY: !!SUPABASE_ANON_KEY
-  });
-  throw new Error("Configuration manquante: VITE_SUPABASE_URL ou VITE_SUPABASE_ANON_KEY non défini");
-}
+import { TwilioResponse } from '../types';
 
 interface SendMessageParams {
   to: string;
@@ -27,7 +15,7 @@ export const registerWhatsAppNumber = async (phoneNumber: string): Promise<{ suc
     // Send registration message
     const result = await sendMessage({
       to: phoneNumber,
-      message: 'Pour recevoir des messages WhatsApp de notre part, veuillez envoyer le message "join" au numéro +14155238886.'
+      message: 'Pour activer votre compte WhatsApp, veuillez envoyer le message "join police-hour" au numéro +14155238886.'
     });
 
     return {
@@ -43,95 +31,65 @@ export const registerWhatsAppNumber = async (phoneNumber: string): Promise<{ suc
   }
 };
 
-// Envoyer un message WhatsApp
+// Send a WhatsApp message
 export const sendMessage = async ({ to, message }: SendMessageParams): Promise<{ success: boolean; message: string; sid?: string }> => {
-  console.log('Envoi de message WhatsApp à:', to);
-  
   try {
-    const url = new URL(`${SUPABASE_URL}/functions/v1/whatsapp`);
-    
-    console.log('URL de la fonction:', url.toString());
-    
-    const response = await fetch(url.toString(), {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
       },
       body: JSON.stringify({ to, message })
     });
-    
-    console.log('Statut de la réponse:', response.status);
-    
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Erreur dans la réponse:', errorText);
-      
-      try {
-        const errorData = JSON.parse(errorText);
-        return { 
-          success: false, 
-          message: errorData.error || errorData.details || `Erreur serveur: ${response.status}`
-        };
-      } catch (parseError) {
-        return { 
-          success: false, 
-          message: `Erreur serveur (${response.status}): ${errorText.substring(0, 100) || 'Pas de détails'}`
-        };
-      }
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to send message');
     }
-    
+
     const data = await response.json();
     return {
       success: true,
-      message: data.message || 'Message WhatsApp envoyé avec succès',
+      message: data.message || 'Message sent successfully',
       sid: data.sid
     };
   } catch (error) {
-    console.error('Erreur dans sendMessage:', error);
+    console.error('Error in sendMessage:', error);
     return {
       success: false,
-      message: error instanceof Error ? error.message : 'Erreur inconnue lors de l\'envoi du message'
+      message: error instanceof Error ? error.message : 'Unknown error'
     };
   }
 };
 
-// Vérifier si un numéro WhatsApp est déjà inscrit au Sandbox
+// Verify if a WhatsApp number is registered
 export const verifyWhatsAppNumber = async (phoneNumber: string): Promise<boolean> => {
   try {
-    console.log('Vérification du numéro:', phoneNumber);
-    
-    // Pour vérifier si le numéro est inscrit, nous envoyons un message de test
-    // Si le message est accepté par Twilio, cela signifie que le numéro est inscrit
     const result = await sendMessage({
       to: phoneNumber,
       message: "Vérification du numéro WhatsApp"
     });
     
-    console.log('Résultat de la vérification:', result);
-    
     return result.success;
   } catch (error) {
-    console.error('Erreur dans verifyWhatsAppNumber:', error);
+    console.error('Error in verifyWhatsAppNumber:', error);
     return false;
   }
 };
 
-// Fonction pour récupérer le numéro WhatsApp de l'utilisateur courant
+// Get the current user's WhatsApp number
 export const getUserWhatsAppNumber = async (): Promise<string | null> => {
-  // Récupérer depuis le localStorage
   return localStorage.getItem('userWhatsAppNumber');
 };
 
-// Fonction pour vérifier si le numéro actuel est vérifié
+// Check if the current number is verified
 export const isCurrentNumberVerified = async (): Promise<boolean> => {
-  // D'abord, vérifier dans localStorage
   const verifiedInStorage = localStorage.getItem('whatsapp_verified') === 'true';
   if (verifiedInStorage) {
     return true;
   }
   
-  // Sinon, vérifier avec l'API
   const phoneNumber = await getUserWhatsAppNumber();
   if (!phoneNumber) {
     return false;
@@ -139,7 +97,6 @@ export const isCurrentNumberVerified = async (): Promise<boolean> => {
   
   const isVerified = await verifyWhatsAppNumber(phoneNumber);
   
-  // Mettre à jour localStorage avec le résultat
   if (isVerified) {
     localStorage.setItem('whatsapp_verified', 'true');
   }
@@ -147,7 +104,7 @@ export const isCurrentNumberVerified = async (): Promise<boolean> => {
   return isVerified;
 };
 
-// Fonction pour envoyer un message à l'utilisateur courant
+// Send a message to the current user
 export const sendMessageToCurrentUser = async (message: string): Promise<{ success: boolean; message: string; sid?: string }> => {
   const phoneNumber = await getUserWhatsAppNumber();
   

@@ -54,7 +54,7 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
       const result = await registerWhatsAppNumber(phoneNumber);
       
       if (result.success) {
-        setSuccess('Pour activer WhatsApp, envoyez "join" au numéro +14155238886');
+        setSuccess('Pour activer WhatsApp, envoyez "join police-hour" au numéro +14155238886');
         setIsVerifying(true); // Démarrer la vérification automatique
       } else {
         setError(result.message);
