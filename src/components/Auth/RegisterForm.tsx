@@ -50,6 +50,8 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
       }
 
       if (data?.user) {
+        console.log('Inscription réussie:', data.user.email);
+        
         // Create default user settings
         const { error: settingsError } = await supabase
           .from('user_settings')
@@ -64,11 +66,15 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
           console.error('Error creating user settings:', settingsError);
         }
 
-        // Redirect to admin interface
-        window.location.href = '/admin';
+        // Appeler onSuccess
+        onSuccess();
+        
+        // Redirection forcée vers le tableau de bord ou la configuration WhatsApp
+        console.log('Redirection après inscription...');
+        
+        // Rediriger d'abord vers la page d'accueil pour configurer WhatsApp
+        window.location.href = '/';
       }
-
-      onSuccess();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erreur lors de l\'inscription';
       setError(errorMessage);
