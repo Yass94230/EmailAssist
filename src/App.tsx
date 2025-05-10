@@ -1,4 +1,4 @@
-// Modification du composant App.tsx
+// Modification du App.tsx
 import { useState, useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
@@ -11,31 +11,42 @@ import WhatsAppConfig from './components/Admin/WhatsAppConfig';
 import AudioConfig from './components/Admin/AudioConfig';
 import EmailConnect from './components/Account/EmailConnect';
 import AuthContainer from './components/Auth/AuthContainer';
-import { signOut } from './services/auth';
-
-// Initialisation du client Supabase
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+import { supabase } from './services/supabase';  // Utiliser le client supabase exporté
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
+  const [authCheckComplete, setAuthCheckComplete] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const session = useSession();
 
   useEffect(() => {
+    console.log("App monté, vérification de la session...");
+    
     // Vérifier la session au chargement
     const checkSession = async () => {
-      console.log("Vérification de la session...");
-      const { data } = await supabase.auth.getSession();
-      console.log("Session:", data.session ? "Connecté" : "Non connecté");
-      
-      // Si connecté, récupérer le numéro de téléphone
-      if (data.session?.user?.phone) {
-        localStorage.setItem('userWhatsAppNumber', data.session.user.phone);
+      try {
+        console.log("Récupération de la session...");
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error("Erreur lors de la récupération de la session:", error);
+          setIsAuthenticated(false);
+        } else {
+          console.log("Session récupérée:", data.session ? "Connecté" : "Non connecté");
+          setIsAuthenticated(!!data.session);
+          
+          // Si connecté, récupérer le numéro de téléphone
+          if (data.session?.user?.phone) {
+            localStorage.setItem('userWhatsAppNumber', data.session.user.phone);
+          }
+        }
+      } catch (err) {
+        console.error("Exception lors de la vérification de la session:", err);
+        setIsAuthenticated(false);
+      } finally {
+        setIsLoading(false);
+        setAuthCheckComplete(true);
       }
-      
-      setIsLoading(false);
     };
     
     checkSession();
@@ -43,9 +54,11 @@ function App() {
     // Écouter les changements d'authentification
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       console.log("Événement auth:", event, session ? "Connecté" : "Non connecté");
+      setIsAuthenticated(!!session);
       
       // Si l'utilisateur se connecte, mettre à jour les informations locales
       if (event === 'SIGNED_IN' && session?.user) {
+        console.log("Utilisateur connecté:", session.user);
         if (session.user.phone) {
           localStorage.setItem('userWhatsAppNumber', session.user.phone);
         }
@@ -53,11 +66,13 @@ function App() {
       
       // Si l'utilisateur se déconnecte, supprimer les informations locales
       if (event === 'SIGNED_OUT') {
+        console.log("Utilisateur déconnecté");
         localStorage.removeItem('userWhatsAppNumber');
       }
     });
     
     return () => {
+      console.log("App démonté, nettoyage des écouteurs");
       authListener.subscription.unsubscribe();
     };
   }, []);
@@ -65,24 +80,43 @@ function App() {
   // Déconnexion avec Supabase
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut();
+      console.log("Tentative de déconnexion...");
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error('Erreur lors de la déconnexion:', error);
+        return;
+      }
+      
+      console.log("Déconnexion réussie");
       localStorage.removeItem('userWhatsAppNumber');
       window.location.href = '/';
     } catch (error) {
-      console.error('Erreur lors de la déconnexion:', error);
+      console.error('Exception lors de la déconnexion:', error);
     }
   };
 
   // Fonction de redirection après connexion
   const handleAuthSuccess = () => {
     console.log("Authentification réussie dans App.tsx");
+    setIsAuthenticated(true);
     // La redirection est gérée dans LoginForm/RegisterForm
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+      </div>
+    );
+  }
+
+  console.log("Rendu avec statut d'authentification:", isAuthenticated);
 
   const router = createBrowserRouter([
     {
       path: '/',
-      element: !session ? (
+      element: !isAuthenticated ? (
         <AuthContainer onSuccess={handleAuthSuccess} />
       ) : (
         <Navigate to="/admin" replace />
@@ -94,7 +128,11 @@ function App() {
     },
     {
       path: '/admin',
-      element: session ? <AdminLayout onLogout={handleLogout} /> : <Navigate to="/" replace />,
+      element: isAuthenticated ? (
+        <AdminLayout />
+      ) : (
+        <Navigate to="/" replace />
+      ),
       children: [
         {
           path: '',
@@ -121,16 +159,11 @@ function App() {
     },
   ]);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
-      </div>
-    );
-  }
-
   return (
-    <SessionContextProvider supabaseClient={supabase}>
+    <SessionContextProvider 
+      supabaseClient={supabase}
+      initialSession={null}
+    >
       <RouterProvider router={router} />
     </SessionContextProvider>
   );
