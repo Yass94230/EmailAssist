@@ -35,18 +35,16 @@ export async function generateResponse(
     throw new Error("Un prompt textuel ou des données audio sont requis");
   }
 
-  // Traitement d'une entrée audio si fournie
   let finalPrompt = prompt;
   if (isAudioInput && audioData) {
     try {
       console.log("Traitement d'une entrée audio...");
       
-      const apiKey = process.env.ANTHROPIC_API_KEY;
+      const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
       if (!apiKey) {
         throw new Error("Clé API Claude manquante");
       }
       
-      // Utiliser l'API Claude pour transcrire l'audio
       const transcriptionRes = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -88,15 +86,13 @@ export async function generateResponse(
     }
   }
 
-  // Si l'utilisateur demande de connecter son email
   if (finalPrompt.toLowerCase().includes('connecter email')) {
     try {
-      // Générer un lien unique
-      const connectResponse = await fetch(`${process.env.SUPABASE_URL}/functions/v1/email-connect`, {
+      const connectResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/email-connect`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+          'Authorization': `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
         },
         body: JSON.stringify({ phoneNumber })
       });
@@ -108,11 +104,10 @@ export async function generateResponse(
       const { url } = await connectResponse.json();
       const responseText = `Pour connecter votre compte email, cliquez sur ce lien :\n\n${url}\n\nCe lien est valable pendant 24 heures et ne peut être utilisé qu'une seule fois pour des raisons de sécurité.`;
       
-      // Si la génération audio est demandée
       let audioUrl;
       if (generateAudio) {
         try {
-          const apiKey = process.env.ANTHROPIC_API_KEY;
+          const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
           const speechRes = await fetch("https://api.anthropic.com/v1/speech", {
             method: "POST",
             headers: {
@@ -150,8 +145,7 @@ export async function generateResponse(
     }
   }
 
-  // Pour les autres requêtes, utiliser l'API Claude
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
   if (!apiKey) {
     throw new Error("Clé API Claude manquante");
   }
@@ -185,7 +179,6 @@ export async function generateResponse(
 
   const textResponse = data.content[0].text;
 
-  // Générer l'audio si demandé
   let audioUrl;
   if (generateAudio) {
     try {
