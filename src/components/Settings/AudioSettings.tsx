@@ -29,6 +29,7 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
     setError(null);
     
     try {
+      // First try to get existing settings
       const { data, error } = await supabase
         .from('user_settings')
         .select('audio_enabled, voice_type')
@@ -38,10 +39,19 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
       if (error) throw error;
       
       if (data) {
-        setAudioEnabled(data.audio_enabled);
-        if (data.voice_type) {
-          setVoiceType(data.voice_type);
-        }
+        setAudioEnabled(data.audio_enabled ?? true);
+        setVoiceType(data.voice_type ?? 'alloy');
+      } else {
+        // If no settings exist, create default settings
+        const { error: insertError } = await supabase
+          .from('user_settings')
+          .insert({
+            phone_number: phoneNumber,
+            audio_enabled: true,
+            voice_type: 'alloy'
+          });
+          
+        if (insertError) throw insertError;
       }
     } catch (err) {
       console.error('Erreur lors du chargement des paramètres:', err);
