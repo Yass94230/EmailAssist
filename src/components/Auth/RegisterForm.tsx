@@ -1,7 +1,8 @@
+// Modification du composant RegisterForm.tsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
-import { Mail, Lock, UserPlus } from 'lucide-react';
+import { Mail, Lock, UserPlus, Phone } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Alert } from '../ui/Alert';
@@ -15,6 +16,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -30,16 +32,25 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
       return;
     }
 
+    // Vérification du format de numéro de téléphone (format international)
+    if (phoneNumber && !phoneNumber.match(/^\+[1-9]\d{1,14}$/)) {
+      setError('Le numéro de téléphone doit être au format international (ex: +33612345678)');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
+      // Utilisation de la méthode native de Supabase pour l'inscription
       const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
+          // Redirection après confirmation d'email (si nécessaire)
           emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
-            email_confirmed: true // Auto-confirm email for direct access
+            phone: phoneNumber, // Stockage du numéro de téléphone comme donnée utilisateur
+            email_confirmed: true // Auto-confirmation pour développement (à ajuster en production)
           }
         }
       });
@@ -54,11 +65,17 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
       if (data?.user) {
         console.log('Inscription réussie:', data.user.email);
         
-        // Create default user settings
+        // Stocker le numéro de téléphone dans le localStorage pour un accès facile
+        if (phoneNumber) {
+          localStorage.setItem('userWhatsAppNumber', phoneNumber);
+        }
+        
+        // Créer les paramètres utilisateur par défaut
         const { error: settingsError } = await supabase
           .from('user_settings')
           .insert({
             user_id: data.user.id,
+            phone_number: phoneNumber,
             audio_enabled: true,
             voice_recognition_enabled: true,
             voice_type: 'alloy'
@@ -72,7 +89,6 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
         onSuccess();
         
         // Rediriger vers le panneau d'administration
-        console.log('Redirection vers /admin');
         navigate('/admin');
       }
     } catch (err) {
@@ -123,6 +139,22 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
               placeholder="vous@exemple.com"
               leftIcon={<Mail className="h-5 w-5 text-gray-400" />}
               required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-1">
+              Numéro de téléphone WhatsApp
+            </label>
+            <Input
+              id="phoneNumber"
+              type="tel"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              placeholder="+33612345678"
+              leftIcon={<Phone className="h-5 w-5 text-gray-400" />}
+              required
+              helperText="Format international (ex: +33612345678)"
             />
           </div>
 
