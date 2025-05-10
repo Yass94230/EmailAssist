@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
 import { Alert } from '../ui/Alert';
 import { Spinner } from '../ui/Spinner';
 import { registerWhatsAppNumber, verifyWhatsAppNumber } from '../../services/whatsapp';
+import { signInWithPhone } from '../../services/auth';
 
 interface WhatsAppSetupProps {
   onSetup: (phoneNumber: string) => void;
@@ -16,6 +18,7 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const navigate = useNavigate();
 
   // Vérifier le statut toutes les 5 secondes après l'envoi de "join"
   useEffect(() => {
@@ -29,7 +32,11 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
             localStorage.setItem('whatsapp_verified', 'true');
             localStorage.setItem('userWhatsAppNumber', phoneNumber);
             setIsVerifying(false);
+            
+            // Démarrer le processus d'authentification
+            await signInWithPhone(phoneNumber);
             onSetup(phoneNumber);
+            navigate('/');
           }
         } catch (error) {
           console.error('Error checking verification:', error);
@@ -42,7 +49,7 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
         clearInterval(interval);
       }
     };
-  }, [isVerifying, phoneNumber, onSetup]);
+  }, [isVerifying, phoneNumber, onSetup, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,7 +62,7 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
       
       if (result.success) {
         setSuccess('Pour activer WhatsApp, envoyez "join police-hour" au numéro +14155238886');
-        setIsVerifying(true); // Démarrer la vérification automatique
+        setIsVerifying(true);
       } else {
         setError(result.message);
       }
