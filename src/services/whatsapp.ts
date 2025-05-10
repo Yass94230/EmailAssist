@@ -18,6 +18,23 @@ interface SendMessageParams {
   message: string;
 }
 
+// Register a WhatsApp number
+export const registerWhatsAppNumber = async (phoneNumber: string): Promise<{ success: boolean; message: string }> => {
+  try {
+    const result = await saveUserWhatsAppNumber(phoneNumber);
+    return {
+      success: result.success,
+      message: result.message
+    };
+  } catch (error) {
+    console.error('Error in registerWhatsAppNumber:', error);
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error during WhatsApp registration'
+    };
+  }
+};
+
 // Envoyer un message WhatsApp
 export const sendMessage = async ({ to, message }: SendMessageParams): Promise<{ success: boolean; message: string; sid?: string }> => {
   console.log('Envoi de message WhatsApp à:', to);
