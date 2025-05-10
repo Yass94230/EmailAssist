@@ -21,6 +21,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const sentMessagesRef = useRef<Set<string>>(new Set());
   const supabase = useSupabaseClient();
   
   const scrollToBottom = () => {
@@ -38,9 +39,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       timestamp: new Date(),
       direction: 'incoming'
     };
-    
-    setMessages([welcomeMessage]);
-    sendMessageToCurrentUser(welcomeMessage.content).catch(console.error);
+
+    // Vérifier si le message n'a pas déjà été envoyé
+    if (!sentMessagesRef.current.has(welcomeMessage.id)) {
+      setMessages([welcomeMessage]);
+      sendMessageToCurrentUser(welcomeMessage.content).catch(console.error);
+      sentMessagesRef.current.add(welcomeMessage.id);
+    }
   }, []);
   
   const handleSendMessage = async () => {
@@ -55,9 +60,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       direction: 'outgoing'
     };
     
+    // Vérifier si le message n'a pas déjà été envoyé
+    if (sentMessagesRef.current.has(userMessage.id)) {
+      return;
+    }
+    
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setIsLoading(true);
+    sentMessagesRef.current.add(userMessage.id);
     
     try {
       // Check if the user wants to connect email
@@ -69,8 +80,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
           timestamp: new Date(),
           direction: 'incoming'
         };
-        setMessages(prev => [...prev, response]);
-        await sendMessageToCurrentUser(response.content);
+
+        if (!sentMessagesRef.current.has(response.id)) {
+          setMessages(prev => [...prev, response]);
+          await sendMessageToCurrentUser(response.content);
+          sentMessagesRef.current.add(response.id);
+        }
+        
         setIsLoading(false);
         return;
       }
@@ -111,8 +127,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         audioUrl: response.audioUrl
       };
       
-      setMessages(prev => [...prev, assistantMessage]);
-      await sendMessageToCurrentUser(response.text);
+      // Vérifier si le message n'a pas déjà été envoyé
+      if (!sentMessagesRef.current.has(assistantMessage.id)) {
+        setMessages(prev => [...prev, assistantMessage]);
+        await sendMessageToCurrentUser(response.text);
+        sentMessagesRef.current.add(assistantMessage.id);
+      }
     } catch (error) {
       console.error('Error in handleSendMessage:', error);
       setError('Une erreur est survenue lors de l\'envoi du message');
