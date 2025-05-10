@@ -39,11 +39,28 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
         }
       });
 
-      if (signUpError) throw signUpError;
+      if (signUpError) {
+        if (signUpError.message === 'User already registered') {
+          throw new Error('Un compte existe déjà avec cet email. Veuillez vous connecter.');
+        }
+        throw signUpError;
+      }
 
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur lors de l\'inscription');
+      const errorMessage = err instanceof Error ? err.message : 'Erreur lors de l\'inscription';
+      setError(errorMessage);
+      
+      // If the user already exists, show the login button more prominently
+      if (errorMessage.includes('compte existe déjà')) {
+        setTimeout(() => {
+          const loginButton = document.querySelector('button[type="button"]');
+          if (loginButton) {
+            loginButton.classList.add('animate-pulse');
+            setTimeout(() => loginButton.classList.remove('animate-pulse'), 2000);
+          }
+        }, 100);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -134,7 +151,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
             <button
               type="button"
               onClick={onBackToLogin}
-              className="text-sm text-gray-600 hover:text-gray-900"
+              className="text-sm text-gray-600 hover:text-gray-900 transition-colors duration-200"
             >
               Déjà un compte ? Se connecter
             </button>
