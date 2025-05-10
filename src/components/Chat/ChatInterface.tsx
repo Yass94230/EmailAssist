@@ -74,8 +74,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       // Get the current user's ID
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       
-      if (authError || !user) {
-        throw new Error('User not authenticated');
+      if (authError) {
+        throw new Error('Erreur d\'authentification: ' + authError.message);
+      }
+      
+      if (!user) {
+        const authErrorMessage = 'Session expirée. Veuillez rafraîchir la page et vous reconnecter.';
+        setError(authErrorMessage);
+        // Remove the user message since we couldn't process it
+        setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
+        sentMessagesRef.current.delete(userMessage.id);
+        return;
       }
 
       // Check if the user wants to connect email
@@ -105,7 +114,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         .eq('phone_number', phoneNumber)
         .maybeSingle();
 
-      if (settingsError) throw settingsError;
+      if (settingsError) {
+        throw new Error('Erreur lors de la récupération des paramètres: ' + settingsError.message);
+      }
 
       // If no settings exist, create them with defaults
       if (!settings) {
@@ -118,7 +129,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
             voice_type: 'alloy'
           });
 
-        if (insertError) throw insertError;
+        if (insertError) {
+          throw new Error('Erreur lors de la création des paramètres: ' + insertError.message);
+        }
       }
 
       const response = await generateResponse(inputValue, {
@@ -143,7 +156,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       }
     } catch (error) {
       console.error('Error in handleSendMessage:', error);
-      setError('Une erreur est survenue lors de l\'envoi du message');
+      const errorMessage = error instanceof Error ? error.message : 'Une erreur est survenue lors de l\'envoi du message';
+      setError(errorMessage);
+      // Remove the user message if we couldn't process it
+      setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
+      sentMessagesRef.current.delete(userMessage.id);
     } finally {
       setIsLoading(false);
     }
