@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Settings, Mail, MessageSquare, Volume2, ArrowLeft } from 'lucide-react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
@@ -6,10 +6,10 @@ const AdminLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  useEffect(() => {
+  React.useEffect(() => {
     // Rediriger vers la page email si l'utilisateur est sur la page admin par défaut
     if (location.pathname === '/admin') {
-      navigate('/admin/email');
+      navigate('/admin/email', { replace: true });
     }
   }, [location.pathname, navigate]);
 
