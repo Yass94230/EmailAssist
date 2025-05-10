@@ -59,11 +59,27 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     setIsLoading(true);
     
     try {
-      const { data: settings } = await supabase
+      // Get user settings or create with defaults if they don't exist
+      const { data: settings, error: settingsError } = await supabase
         .from('user_settings')
         .select('audio_enabled, voice_type')
         .eq('phone_number', phoneNumber)
         .maybeSingle();
+
+      if (settingsError) throw settingsError;
+
+      // If no settings exist, create them with defaults
+      if (!settings) {
+        const { error: insertError } = await supabase
+          .from('user_settings')
+          .insert({
+            phone_number: phoneNumber,
+            audio_enabled: true,
+            voice_type: 'alloy'
+          });
+
+        if (insertError) throw insertError;
+      }
 
       const response = await generateResponse(inputValue, {
         generateAudio: settings?.audio_enabled ?? true,
