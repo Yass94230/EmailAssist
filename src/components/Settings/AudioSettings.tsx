@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Volume2, VolumeX, Mic, Settings2 } from 'lucide-react';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { Database } from '../../types/supabase';
 
 interface AudioSettingsProps {
   phoneNumber: string;
@@ -14,7 +14,7 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   
-  const supabase = useSupabaseClient<SupabaseClient>();
+  const supabase = useSupabaseClient<Database>();
   
   useEffect(() => {
     if (phoneNumber) {
