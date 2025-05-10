@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
 import { Mail, Lock, UserPlus } from 'lucide-react';
 import { Button } from '../ui/Button';
@@ -18,6 +19,7 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
   const [error, setError] = useState<string | null>(null);
   
   const supabase = useSupabaseClient();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,6 +70,10 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
 
         // Appeler onSuccess
         onSuccess();
+        
+        // Rediriger vers le panneau d'administration
+        console.log('Redirection vers /admin');
+        navigate('/admin');
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erreur lors de l\'inscription';
