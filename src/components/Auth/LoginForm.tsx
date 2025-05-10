@@ -4,6 +4,7 @@ import { Mail, Lock, LogIn } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Alert } from '../ui/Alert';
+import { useNavigate } from 'react-router-dom';
 
 interface LoginFormProps {
   onSuccess: () => void;
@@ -17,6 +18,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
   const [error, setError] = useState<string | null>(null);
   
   const supabase = useSupabaseClient();
+  const navigate = useNavigate(); // Ajout du hook useNavigate
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,6 +43,20 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
 
       if (data?.user) {
         console.log('Connexion réussie:', data.user.email);
+        
+        // Vérifier si l'utilisateur a déjà configuré WhatsApp
+        const phoneNumber = localStorage.getItem('userWhatsAppNumber');
+        const isVerified = localStorage.getItem('whatsapp_verified') === 'true';
+        
+        if (phoneNumber && isVerified) {
+          // Si WhatsApp est déjà configuré, rediriger vers le tableau de bord
+          navigate('/admin');
+        } else {
+          // Sinon, rediriger vers la page de configuration WhatsApp
+          navigate('/');
+        }
+        
+        // Appeler onSuccess après la redirection
         onSuccess();
       } else {
         throw new Error('Une erreur inattendue est survenue. Veuillez réessayer.');
