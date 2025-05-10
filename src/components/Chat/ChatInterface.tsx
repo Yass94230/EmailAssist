@@ -30,6 +30,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sentMessagesRef = useRef<Set<string>>(new Set());
   const supabase = useSupabaseClient();
+
+  // Cleanup MediaRecorder on unmount
+  useEffect(() => {
+    return () => {
+      if (mediaRecorder) {
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [mediaRecorder]);
   
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

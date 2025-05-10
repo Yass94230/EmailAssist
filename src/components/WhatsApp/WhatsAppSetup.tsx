@@ -125,6 +125,6 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
       </Card>
     </div>
   );
-}
+};
 
 export default WhatsAppSetup;
