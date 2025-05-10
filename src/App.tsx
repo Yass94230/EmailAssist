@@ -50,10 +50,10 @@ function App() {
       path: '/',
       element: !session ? (
         <AuthContainer onSuccess={() => window.location.reload()} />
-      ) : phoneNumber ? (
-        <Layout phoneNumber={phoneNumber} onLogout={handleLogout} />
-      ) : (
+      ) : !phoneNumber ? (
         <WhatsAppSetup onSetup={setPhoneNumber} />
+      ) : (
+        <Navigate to="/admin" replace />
       ),
     },
     {
@@ -62,11 +62,11 @@ function App() {
     },
     {
       path: '/admin',
-      element: session && phoneNumber ? <AdminLayout /> : <Navigate to="/" />,
+      element: session ? <AdminLayout /> : <Navigate to="/" />,
       children: [
         {
           index: true,
-          element: <Navigate to="/admin/email" replace />,
+          element: <Dashboard />,
         },
         {
           path: 'email',
