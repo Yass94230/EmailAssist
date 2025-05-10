@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Menu, X, ChevronDown, ChevronRight, Bell, LogOut, Mail, Settings } from 'lucide-react';
+import { Menu, X, ChevronDown, ChevronRight, Bell, LogOut, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import GmailOAuthManager from '../Account/GmailOAuthManager';
 import AudioSettings from '../Settings/AudioSettings';
 
 interface SidebarProps {
@@ -12,11 +11,10 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ onClose, phoneNumber, onLogout }) => {
   const [expandedSections, setExpandedSections] = useState({
-    accounts: true,
     settings: false
   });
 
-  const toggleSection = (section: 'accounts' | 'settings') => {
+  const toggleSection = (section: 'settings') => {
     setExpandedSections(prev => ({
       ...prev,
       [section]: !prev[section]
@@ -50,27 +48,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onClose, phoneNumber, onLogout }) => 
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {/* Section Comptes */}
-        <div>
-          <button
-            onClick={() => toggleSection('accounts')}
-            className="w-full flex items-center justify-between p-2 hover:bg-gray-100 rounded-lg"
-          >
-            <span className="font-medium">Configuration Email</span>
-            {expandedSections.accounts ? (
-              <ChevronDown size={20} />
-            ) : (
-              <ChevronRight size={20} />
-            )}
-          </button>
-          
-          {expandedSections.accounts && (
-            <div className="mt-2 space-y-2">
-              <GmailOAuthManager phoneNumber={phoneNumber} />
-            </div>
-          )}
-        </div>
-
         {/* Section Paramètres */}
         <div>
           <button
