@@ -5,6 +5,7 @@ import { Card } from '../ui/Card';
 import { Alert } from '../ui/Alert';
 import { Spinner } from '../ui/Spinner';
 import { registerWhatsAppNumber } from '../../services/whatsapp';
+import { supabase } from '../../services/supabase';
 
 interface WhatsAppSetupProps {
   onNumberRegistered?: (phoneNumber: string) => void;
@@ -19,15 +20,29 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
     if (defaultPhoneNumber) {
       setPhoneNumber(defaultPhoneNumber);
     }
+    
+    // Check authentication status when component mounts
+    checkAuth();
   }, [defaultPhoneNumber]);
+
+  const checkAuth = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    setIsAuthenticated(!!session);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!isAuthenticated) {
+      setError('Veuillez vous connecter pour enregistrer un numéro WhatsApp');
+      return;
+    }
     
     if (!phoneNumber.trim()) {
       setError('Veuillez entrer un numéro de téléphone');
@@ -63,6 +78,16 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({
     // Ensure the number starts with a +
     return cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
   };
+
+  if (!isAuthenticated) {
+    return (
+      <Card className="p-6 max-w-md w-full">
+        <Alert variant="destructive" className="mb-4">
+          Veuillez vous connecter pour enregistrer un numéro WhatsApp
+        </Alert>
+      </Card>
+    );
+  }
 
   return (
     <Card className="p-6 max-w-md w-full">
