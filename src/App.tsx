@@ -1,3 +1,4 @@
+// Modification du composant App.tsx
 import { useState, useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
@@ -12,6 +13,7 @@ import EmailConnect from './components/Account/EmailConnect';
 import AuthContainer from './components/Auth/AuthContainer';
 import { signOut } from './services/auth';
 
+// Initialisation du client Supabase
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -27,6 +29,12 @@ function App() {
       console.log("Vérification de la session...");
       const { data } = await supabase.auth.getSession();
       console.log("Session:", data.session ? "Connecté" : "Non connecté");
+      
+      // Si connecté, récupérer le numéro de téléphone
+      if (data.session?.user?.phone) {
+        localStorage.setItem('userWhatsAppNumber', data.session.user.phone);
+      }
+      
       setIsLoading(false);
     };
     
@@ -35,6 +43,18 @@ function App() {
     // Écouter les changements d'authentification
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       console.log("Événement auth:", event, session ? "Connecté" : "Non connecté");
+      
+      // Si l'utilisateur se connecte, mettre à jour les informations locales
+      if (event === 'SIGNED_IN' && session?.user) {
+        if (session.user.phone) {
+          localStorage.setItem('userWhatsAppNumber', session.user.phone);
+        }
+      }
+      
+      // Si l'utilisateur se déconnecte, supprimer les informations locales
+      if (event === 'SIGNED_OUT') {
+        localStorage.removeItem('userWhatsAppNumber');
+      }
     });
     
     return () => {
@@ -42,10 +62,11 @@ function App() {
     };
   }, []);
 
-  // Déconnexion
+  // Déconnexion avec Supabase
   const handleLogout = async () => {
     try {
-      await signOut();
+      await supabase.auth.signOut();
+      localStorage.removeItem('userWhatsAppNumber');
       window.location.href = '/';
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error);
@@ -55,7 +76,7 @@ function App() {
   // Fonction de redirection après connexion
   const handleAuthSuccess = () => {
     console.log("Authentification réussie dans App.tsx");
-    // La redirection est gérée dans LoginForm
+    // La redirection est gérée dans LoginForm/RegisterForm
   };
 
   const router = createBrowserRouter([
@@ -73,7 +94,7 @@ function App() {
     },
     {
       path: '/admin',
-      element: session ? <AdminLayout /> : <Navigate to="/" replace />,
+      element: session ? <AdminLayout onLogout={handleLogout} /> : <Navigate to="/" replace />,
       children: [
         {
           path: '',
@@ -92,6 +113,11 @@ function App() {
           element: <AudioConfig />,
         },
       ],
+    },
+    // Ajouter une route pour la redirection après confirmation d'email
+    {
+      path: '/auth/callback',
+      element: <Navigate to="/admin" replace />,
     },
   ]);
 
