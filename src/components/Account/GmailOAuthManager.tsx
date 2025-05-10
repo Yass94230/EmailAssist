@@ -45,12 +45,17 @@ const GmailOAuthManager: React.FC<GmailOAuthManagerProps> = ({ phoneNumber }) =>
       setError(null);
       setIsLoading(true);
 
-      const { data, error: urlError } = await supabase
+      const { data, error: functionError } = await supabase
         .functions.invoke('google-auth-url', {
-          body: { phoneNumber }
+          body: { phoneNumber },
+          headers: {
+            'Content-Type': 'application/json'
+          }
         });
 
-      if (urlError) throw urlError;
+      if (functionError) {
+        throw new Error(functionError.message || 'Erreur lors de la connexion à Google');
+      }
       
       if (data?.url) {
         window.location.href = data.url;
@@ -59,7 +64,7 @@ const GmailOAuthManager: React.FC<GmailOAuthManagerProps> = ({ phoneNumber }) =>
       }
     } catch (error) {
       console.error('Erreur lors de la connexion Google:', error);
-      setError('Erreur lors de la connexion à Google');
+      setError('Erreur lors de la connexion à Google. Veuillez réessayer plus tard.');
       setIsLoading(false);
     }
   };
