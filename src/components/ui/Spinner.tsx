@@ -5,7 +5,7 @@ interface SpinnerProps extends React.HTMLAttributes<HTMLDivElement> {
   size?: 'sm' | 'md' | 'lg';
 }
 
-const Spinner = React.forwardRef<HTMLDivElement, SpinnerProps>(
+export const Spinner = React.forwardRef<HTMLDivElement, SpinnerProps>(
   ({ className, size = 'md', ...props }, ref) => {
     const sizes = {
       sm: "h-4 w-4",
