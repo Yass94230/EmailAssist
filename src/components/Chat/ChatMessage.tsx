@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Play, Pause, Volume2, Download } from 'lucide-react';
 import WaveSurfer from 'wavesurfer.js';
 import { Message } from '../../types';
+import { Button } from '../ui/Button';
 
 interface ChatMessageProps {
   message: Message;
@@ -19,7 +20,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   useEffect(() => {
     if (message.audioUrl && waveformRef.current) {
       try {
-        // Création de l'instance WaveSurfer
         wavesurferRef.current = WaveSurfer.create({
           container: waveformRef.current,
           waveColor: isOutgoing ? '#fff' : '#4B5563',
@@ -32,7 +32,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
           normalize: true
         });
         
-        // Gestionnaires d'événements
         wavesurferRef.current.on('ready', () => {
           setDuration(wavesurferRef.current?.getDuration() || 0);
           setIsAudioLoaded(true);
@@ -46,19 +45,12 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
           setIsPlaying(false);
         });
         
-        wavesurferRef.current.on('error', (error) => {
-          console.error('Erreur WaveSurfer:', error);
-          setIsAudioLoaded(false);
-        });
-        
-        // Chargement de l'audio
         wavesurferRef.current.load(message.audioUrl);
       } catch (error) {
         console.error('Erreur lors de l\'initialisation de WaveSurfer:', error);
         setIsAudioLoaded(false);
       }
       
-      // Nettoyage à la désinstallation du composant
       return () => {
         if (wavesurferRef.current) {
           wavesurferRef.current.destroy();
@@ -111,24 +103,28 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
             isOutgoing ? 'text-white' : 'text-gray-600'
           }`}>
             <div className="flex items-center gap-2">
-              <button
+              <Button
                 onClick={toggleAudio}
                 disabled={!isAudioLoaded}
-                className={`p-1 rounded-full hover:bg-opacity-10 hover:bg-black ${!isAudioLoaded ? 'opacity-50 cursor-not-allowed' : ''}`}
+                variant="ghost"
+                size="sm"
+                className={`p-1 hover:bg-opacity-10 ${!isAudioLoaded ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-              </button>
+              </Button>
               <Volume2 size={16} />
               <span className="text-xs">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
-              <button
+              <Button
                 onClick={downloadAudio}
-                className="p-1 rounded-full hover:bg-opacity-10 hover:bg-black ml-auto"
+                variant="ghost"
+                size="sm"
+                className="p-1 hover:bg-opacity-10 ml-auto"
                 title="Télécharger l'audio"
               >
                 <Download size={14} />
-              </button>
+              </Button>
             </div>
             <div ref={waveformRef} className="w-full" />
             {!isAudioLoaded && (

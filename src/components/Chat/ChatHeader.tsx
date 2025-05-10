@@ -1,5 +1,6 @@
 import React from 'react';
 import { MoreVertical, Search, Phone, Video } from 'lucide-react';
+import { Button } from '../ui/Button';
 
 interface ChatHeaderProps {
   phoneNumber: string;
@@ -20,18 +21,18 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({ phoneNumber }) => {
         </div>
       </div>
       <div className="flex items-center space-x-2">
-        <button className="p-2 rounded-full hover:bg-gray-200">
+        <Button variant="ghost" size="sm" className="rounded-full">
           <Search size={20} className="text-gray-600" />
-        </button>
-        <button className="p-2 rounded-full hover:bg-gray-200">
+        </Button>
+        <Button variant="ghost" size="sm" className="rounded-full">
           <Phone size={20} className="text-gray-600" />
-        </button>
-        <button className="p-2 rounded-full hover:bg-gray-200">
+        </Button>
+        <Button variant="ghost" size="sm" className="rounded-full">
           <Video size={20} className="text-gray-600" />
-        </button>
-        <button className="p-2 rounded-full hover:bg-gray-200">
+        </Button>
+        <Button variant="ghost" size="sm" className="rounded-full">
           <MoreVertical size={20} className="text-gray-600" />
-        </button>
+        </Button>
       </div>
     </div>
   );
