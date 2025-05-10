@@ -42,39 +42,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
       if (data?.user) {
         console.log('Connexion réussie:', data.user.email);
         
-        // Récupérer les informations utilisateur depuis Supabase
-        const { data: userData, error: userError } = await supabase
-          .from('user_whatsapp')
-          .select('phone_number')
-          .eq('user_id', data.user.id)
-          .maybeSingle();
-          
-        if (!userError && userData?.phone_number) {
-          // Si l'utilisateur a déjà un numéro WhatsApp enregistré
-          localStorage.setItem('userWhatsAppNumber', userData.phone_number);
-          localStorage.setItem('whatsapp_verified', 'true');
-          console.log('Numéro WhatsApp trouvé dans la base de données:', userData.phone_number);
-          
-          // Redirection forcée vers le tableau de bord
-          window.location.href = '/admin';
-          return;
-        }
-        
-        // Vérifier si le localStorage contient déjà des infos WhatsApp
-        const savedNumber = localStorage.getItem('userWhatsAppNumber');
-        const isVerified = localStorage.getItem('whatsapp_verified') === 'true';
-        
-        if (savedNumber && isVerified) {
-          // Si WhatsApp est déjà configuré, rediriger vers le tableau de bord
-          console.log('Redirection vers /admin (WhatsApp déjà configuré)');
-          window.location.href = '/admin';
-        } else {
-          // Sinon, rediriger vers la page d'accueil pour configurer WhatsApp
-          console.log('Redirection vers / (configuration WhatsApp requise)');
-          window.location.href = '/';
-        }
-        
-        // Appeler onSuccess
+        // Redirection directe vers le tableau de bord admin
         onSuccess();
       } else {
         throw new Error('Une erreur inattendue est survenue. Veuillez réessayer.');
