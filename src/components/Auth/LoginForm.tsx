@@ -24,15 +24,26 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
     setIsLoading(true);
 
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      if (signInError) throw signInError;
+      if (signInError) {
+        if (signInError.message === 'Invalid login credentials') {
+          throw new Error('Email ou mot de passe incorrect');
+        }
+        throw signInError;
+      }
 
-      onSuccess();
+      if (data?.user) {
+        console.log('Connexion réussie:', data.user.email);
+        onSuccess();
+      } else {
+        throw new Error('Erreur inattendue lors de la connexion');
+      }
     } catch (err) {
+      console.error('Erreur de connexion:', err);
       setError(err instanceof Error ? err.message : 'Erreur lors de la connexion');
     } finally {
       setIsLoading(false);
@@ -69,6 +80,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
               placeholder="vous@exemple.com"
               leftIcon={<Mail className="h-5 w-5 text-gray-400" />}
               required
+              autoComplete="email"
             />
           </div>
 
@@ -84,6 +96,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
               placeholder="••••••••"
               leftIcon={<Lock className="h-5 w-5 text-gray-400" />}
               required
+              autoComplete="current-password"
             />
           </div>
 
