@@ -33,20 +33,14 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
         .from('user_settings')
         .select('audio_enabled, voice_type')
         .eq('phone_number', phoneNumber)
-        .single();
+        .maybeSingle();
         
-      if (error) {
-        if (error.code !== 'PGRST116') { // Pas de résultat trouvé
-          throw error;
-        }
-      }
+      if (error) throw error;
       
       if (data) {
         setAudioEnabled(data.audio_enabled === true);
         if (data.voice_type && typeof data.voice_type === 'string') {
           setVoiceType(data.voice_type);
-        } else {
-          setVoiceType('alloy'); // Valeur par défaut
         }
       }
     } catch (err) {
