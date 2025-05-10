@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
-import { Mail, Lock, LogIn } from 'lucide-react';
+import { Mail, Lock, UserPlus } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Alert } from '../ui/Alert';
 
-interface LoginFormProps {
+interface RegisterFormProps {
   onSuccess: () => void;
-  onRegister: () => void;
+  onBackToLogin: () => void;
 }
 
-const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
+const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -21,19 +22,28 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (password !== confirmPassword) {
+      setError('Les mots de passe ne correspondent pas');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { error: signUpError } = await supabase.auth.signUp({
         email,
-        password
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`
+        }
       });
 
-      if (signInError) throw signInError;
+      if (signUpError) throw signUpError;
 
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur lors de la connexion');
+      setError(err instanceof Error ? err.message : 'Erreur lors de l\'inscription');
     } finally {
       setIsLoading(false);
     }
@@ -44,10 +54,10 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
       <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6">
         <div className="text-center mb-8">
           <div className="h-16 w-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Mail className="h-8 w-8 text-white" />
+            <UserPlus className="h-8 w-8 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-800">Assistant Email</h2>
-          <p className="text-gray-600 mt-2">Connectez-vous pour continuer</p>
+          <h2 className="text-2xl font-bold text-gray-800">Créer un compte</h2>
+          <p className="text-gray-600 mt-2">Inscrivez-vous pour commencer</p>
         </div>
 
         {error && (
@@ -87,6 +97,21 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
             />
           </div>
 
+          <div>
+            <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+              Confirmer le mot de passe
+            </label>
+            <Input
+              id="confirmPassword"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="••••••••"
+              leftIcon={<Lock className="h-5 w-5 text-gray-400" />}
+              required
+            />
+          </div>
+
           <Button
             type="submit"
             className="w-full"
@@ -95,12 +120,12 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
             {isLoading ? (
               <span className="flex items-center justify-center">
                 <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></span>
-                Connexion...
+                Inscription...
               </span>
             ) : (
               <span className="flex items-center justify-center">
-                <LogIn className="h-5 w-5 mr-2" />
-                Se connecter
+                <UserPlus className="h-5 w-5 mr-2" />
+                S'inscrire
               </span>
             )}
           </Button>
@@ -108,10 +133,10 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
           <div className="text-center mt-4">
             <button
               type="button"
-              onClick={onRegister}
+              onClick={onBackToLogin}
               className="text-sm text-gray-600 hover:text-gray-900"
             >
-              Pas encore de compte ? S'inscrire
+              Déjà un compte ? Se connecter
             </button>
           </div>
         </form>
@@ -120,4 +145,4 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
   );
 };
 
-export default LoginForm;
+export default RegisterForm;

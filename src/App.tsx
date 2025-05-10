@@ -10,7 +10,7 @@ import WhatsAppConfig from './components/Admin/WhatsAppConfig';
 import AudioConfig from './components/Admin/AudioConfig';
 import WhatsAppSetup from './components/WhatsApp/WhatsAppSetup';
 import EmailConnect from './components/Account/EmailConnect';
-import LoginForm from './components/Auth/LoginForm';
+import AuthContainer from './components/Auth/AuthContainer';
 import { signOut } from './services/auth';
 
 const supabase = createClient(
@@ -49,7 +49,7 @@ function App() {
     {
       path: '/',
       element: !session ? (
-        <LoginForm onSuccess={() => window.location.reload()} />
+        <AuthContainer onSuccess={() => window.location.reload()} />
       ) : phoneNumber ? (
         <Layout phoneNumber={phoneNumber} onLogout={handleLogout} />
       ) : (
