@@ -3,158 +3,179 @@ import { supabase } from './supabase';
 import { TwilioResponse } from '../types';
 
 /**
- * Enregistre un numéro WhatsApp pour l'utilisateur actuel
+ * Formats a phone number to ensure it starts with + and contains only digits
+ */
+function formatPhoneNumber(number: string): string {
+  // Remove all non-digit characters except +
+  const cleaned = number.replace(/[^\d+]/g, '');
+  return cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
+}
+
+/**
+ * Registers a WhatsApp number for the current user
  */
 export async function registerWhatsAppNumber(phoneNumber: string): Promise<void> {
   try {
-    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-    const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const formattedNumber = formatPhoneNumber(phoneNumber);
     
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      throw new Error("Configuration Supabase manquante");
-    }
+    // Get current user session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) throw sessionError;
+
+    // Create or update user settings first
+    const { error: settingsError } = await supabase
+      .from('user_settings')
+      .upsert({
+        phone_number: formattedNumber,
+        audio_enabled: true,
+        voice_type: 'alloy',
+        updated_at: new Date().toISOString()
+      });
     
-    // Récupérer le token d'authentification actuel
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    
-    const token = session?.access_token;
-    
-    // Appeler la fonction Edge pour enregistrer le numéro
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/user-whatsapp`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({ phoneNumber }),
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `Erreur ${response.status}: ${response.statusText}`);
-    }
-    
-    await response.json();
+    if (settingsError) throw settingsError;
+
+    // Register WhatsApp number
+    const { error: whatsappError } = await supabase
+      .from('user_whatsapp')
+      .upsert({
+        user_id: session?.user?.id,
+        phone_number: formattedNumber,
+        updated_at: new Date().toISOString()
+      });
+
+    if (whatsappError) throw whatsappError;
+
+    // Save in localStorage for quick access
+    localStorage.setItem('userWhatsAppNumber', formattedNumber);
   } catch (error) {
-    console.error('Erreur lors de l\'enregistrement du numéro WhatsApp:', error);
+    console.error('Error registering WhatsApp number:', error);
     throw error;
   }
 }
 
 /**
- * Envoie un message WhatsApp
+ * Sends a WhatsApp message
  */
-export async function sendWhatsAppMessage(
-  to: string,
-  message: string,
-  from?: string
-): Promise<TwilioResponse> {
+export async function sendWhatsAppMessage(to: string, message: string): Promise<TwilioResponse> {
   try {
-    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-    const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const formattedTo = formatPhoneNumber(to);
     
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      throw new Error("Configuration Supabase manquante");
-    }
-    
-    // Format the phone number: remove spaces and ensure it starts with +
-    const formattedTo = to.startsWith('+') ? to : `+${to}`;
-    const defaultFrom = import.meta.env.VITE_DEFAULT_WHATSAPP_NUMBER || '+14155238886';
-    const formattedFrom = from ? (from.startsWith('+') ? from : `+${from}`) : defaultFrom;
-    
-    // Appeler la fonction Edge pour envoyer le message
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/twilio`, {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
       },
-      body: JSON.stringify({
+      body: JSON.stringify({ 
         to: formattedTo,
-        from: formattedFrom,
-        message,
-        channel: 'whatsapp'
+        message 
       }),
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(errorData.error || `Erreur ${response.status}: ${response.statusText}`);
+      throw new Error(errorData.error || `Error ${response.status}: ${response.statusText}`);
     }
-    
+
     return await response.json();
   } catch (error) {
-    console.error('Erreur lors de l\'envoi du message WhatsApp:', error);
+    console.error('Error sending WhatsApp message:', error);
     throw error;
   }
 }
 
 /**
- * Vérifie si un numéro est enregistré pour WhatsApp
+ * Verifies if a WhatsApp number is registered and active
  */
-export async function verifyWhatsAppNumber(phoneNumber: string): Promise<{ isRegistered: boolean }> {
+export async function verifyWhatsAppNumber(phoneNumber: string): Promise<boolean> {
   try {
-    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-    const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const formattedNumber = formatPhoneNumber(phoneNumber);
     
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      throw new Error("Configuration Supabase manquante");
-    }
-    
-    // Format the phone number
-    const formattedNumber = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
-    
-    // Appeler la fonction Edge pour vérifier le numéro
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/whatsapp-verify`, {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp/verify`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
       },
       body: JSON.stringify({ phoneNumber: formattedNumber }),
     });
-    
+
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `Erreur ${response.status}: ${response.statusText}`);
+      throw new Error(`Error ${response.status}: ${response.statusText}`);
+    }
+
+    const { verified } = await response.json();
+    
+    if (verified) {
+      localStorage.setItem('whatsapp_verified', 'true');
     }
     
-    const data = await response.json();
-    return { isRegistered: data.isRegistered };
+    return verified;
   } catch (error) {
-    console.error('Erreur lors de la vérification du numéro WhatsApp:', error);
-    return { isRegistered: false };
+    console.error('Error verifying WhatsApp number:', error);
+    return false;
   }
 }
 
 /**
- * Récupère le numéro WhatsApp associé à l'utilisateur actuel
+ * Gets the current user's WhatsApp number
  */
-export async function getUserWhatsAppNumber(): Promise<string | null> {
+export async function getCurrentWhatsAppNumber(): Promise<string | null> {
   try {
-    // Récupérer l'ID utilisateur actuel
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      return null;
-    }
-    
-    // Récupérer le numéro WhatsApp associé à l'utilisateur
+    // First check localStorage for better performance
+    const cachedNumber = localStorage.getItem('userWhatsAppNumber');
+    if (cachedNumber) return cachedNumber;
+
+    // If not in localStorage, check database
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return null;
+
     const { data, error } = await supabase
       .from('user_whatsapp')
       .select('phone_number')
-      .eq('user_id', user.id)
+      .eq('user_id', session.user.id)
       .single();
-      
-    if (error || !data) {
-      return null;
-    }
-    
+
+    if (error) throw error;
+    if (!data) return null;
+
+    // Cache the number in localStorage
+    localStorage.setItem('userWhatsAppNumber', data.phone_number);
     return data.phone_number;
   } catch (error) {
-    console.error('Erreur lors de la récupération du numéro WhatsApp:', error);
+    console.error('Error getting WhatsApp number:', error);
     return null;
   }
+}
+
+/**
+ * Checks if the current WhatsApp number is verified
+ */
+export async function isWhatsAppVerified(): Promise<boolean> {
+  try {
+    // Check localStorage first
+    if (localStorage.getItem('whatsapp_verified') === 'true') {
+      return true;
+    }
+
+    const phoneNumber = await getCurrentWhatsAppNumber();
+    if (!phoneNumber) return false;
+
+    return await verifyWhatsAppNumber(phoneNumber);
+  } catch (error) {
+    console.error('Error checking WhatsApp verification:', error);
+    return false;
+  }
+}
+
+/**
+ * Sends a message to the current user's WhatsApp
+ */
+export async function sendMessageToCurrentUser(message: string): Promise<TwilioResponse> {
+  const phoneNumber = await getCurrentWhatsAppNumber();
+  if (!phoneNumber) {
+    throw new Error('No WhatsApp number configured');
+  }
+
+  return sendWhatsAppMessage(phoneNumber, message);
 }
