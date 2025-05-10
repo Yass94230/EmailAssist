@@ -22,9 +22,25 @@ function App() {
   const session = useSession();
 
   useEffect(() => {
-    console.log("Session actuelle:", session ? "Connecté" : "Non connecté");
-    setIsLoading(false);
-  }, [session]);
+    // Vérifier la session au chargement
+    const checkSession = async () => {
+      console.log("Vérification de la session...");
+      const { data } = await supabase.auth.getSession();
+      console.log("Session:", data.session ? "Connecté" : "Non connecté");
+      setIsLoading(false);
+    };
+    
+    checkSession();
+    
+    // Écouter les changements d'authentification
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("Événement auth:", event, session ? "Connecté" : "Non connecté");
+    });
+    
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   // Déconnexion
   const handleLogout = async () => {
@@ -39,7 +55,7 @@ function App() {
   // Fonction de redirection après connexion
   const handleAuthSuccess = () => {
     console.log("Authentification réussie dans App.tsx");
-    window.location.href = '/admin';
+    // La redirection est gérée dans LoginForm
   };
 
   const router = createBrowserRouter([
@@ -57,11 +73,11 @@ function App() {
     },
     {
       path: '/admin',
-      element: session ? <AdminLayout /> : <Navigate to="/" />,
+      element: session ? <AdminLayout /> : <Navigate to="/" replace />,
       children: [
         {
-          index: true,
-          element: <Dashboard />,
+          path: '',
+          element: <Navigate to="/admin/email" replace />,
         },
         {
           path: 'email',
