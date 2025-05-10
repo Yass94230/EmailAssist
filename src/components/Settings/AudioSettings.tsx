@@ -29,6 +29,11 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
     setError(null);
     
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('Utilisateur non authentifié');
+      }
+
       // First try to get existing settings
       const { data, error } = await supabase
         .from('user_settings')
@@ -47,6 +52,7 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
           .from('user_settings')
           .insert({
             phone_number: phoneNumber,
+            user_id: user.id,
             audio_enabled: true,
             voice_type: 'alloy'
           });
@@ -69,10 +75,16 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
     setIsLoading(true);
     
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('Utilisateur non authentifié');
+      }
+
       const { error } = await supabase
         .from('user_settings')
         .upsert({
           phone_number: phoneNumber,
+          user_id: user.id,
           audio_enabled: audioEnabled,
           voice_type: voiceType,
           updated_at: new Date().toISOString()
@@ -83,7 +95,8 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
       setSuccess('Paramètres audio enregistrés avec succès');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      setError('Erreur lors de l\'enregistrement des paramètres audio. Veuillez réessayer.');
+      const errorMessage = err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement des paramètres audio. Veuillez réessayer.';
+      setError(errorMessage);
       console.error('Erreur lors de l\'enregistrement des paramètres:', err);
     } finally {
       setIsLoading(false);
