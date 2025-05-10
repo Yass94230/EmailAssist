@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Routes, Route, useSearchParams } from 'react-router-dom';
 import Layout from './components/Layout';
 import WhatsAppSetup from './components/WhatsApp/WhatsAppSetup';
 import EmailConnect from './components/Account/EmailConnect';
+import AdminLayout from './components/Admin/AdminLayout';
+import Dashboard from './components/Admin/Dashboard';
+import EmailConfig from './components/Admin/EmailConfig';
+import WhatsAppConfig from './components/Admin/WhatsAppConfig';
+import AudioConfig from './components/Admin/AudioConfig';
 
 function App() {
   const [searchParams] = useSearchParams();
@@ -45,13 +50,26 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {!phoneNumber ? (
-        <WhatsAppSetup onSetup={handleWhatsAppSetup} />
-      ) : (
-        <Layout phoneNumber={phoneNumber} onLogout={handleLogout} />
-      )}
-    </div>
+    <Routes>
+      <Route path="/admin" element={<AdminLayout />}>
+        <Route index element={<Dashboard />} />
+        <Route path="email" element={<EmailConfig />} />
+        <Route path="whatsapp" element={<WhatsAppConfig />} />
+        <Route path="audio" element={<AudioConfig />} />
+      </Route>
+      <Route
+        path="*"
+        element={
+          <div className="min-h-screen bg-gray-100">
+            {!phoneNumber ? (
+              <WhatsAppSetup onSetup={handleWhatsAppSetup} />
+            ) : (
+              <Layout phoneNumber={phoneNumber} onLogout={handleLogout} />
+            )}
+          </div>
+        }
+      />
+    </Routes>
   );
 }
 
