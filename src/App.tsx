@@ -14,12 +14,12 @@ import { supabase } from './services/supabase';
 function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const session = useSession();
 
   useEffect(() => {
     console.log("App monté, vérification de la session...");
     
-    // Vérifier la session au chargement
     const checkSession = async () => {
       try {
         console.log("Récupération de la session...");
@@ -28,14 +28,47 @@ function App() {
         if (error) {
           console.error("Erreur lors de la récupération de la session:", error);
           setIsAuthenticated(false);
-        } else {
-          console.log("Session récupérée:", session ? "Connecté" : "Non connecté");
-          setIsAuthenticated(!!session);
+          return;
+        }
+
+        if (session?.user) {
+          console.log("Session trouvée:", session.user);
+          setIsAuthenticated(true);
           
-          // Si connecté, récupérer le numéro de téléphone
-          if (session?.user?.phone) {
+          // Récupérer le numéro de téléphone
+          const storedNumber = localStorage.getItem('userWhatsAppNumber');
+          if (storedNumber) {
+            setPhoneNumber(storedNumber);
+          } else if (session.user.phone) {
+            setPhoneNumber(session.user.phone);
             localStorage.setItem('userWhatsAppNumber', session.user.phone);
           }
+
+          // Vérifier/créer les paramètres utilisateur
+          const { data: settings, error: settingsError } = await supabase
+            .from('user_settings')
+            .select('*')
+            .eq('user_id', session.user.id)
+            .single();
+
+          if (!settings && !settingsError) {
+            const phone = session.user.phone || storedNumber;
+            if (phone) {
+              await supabase
+                .from('user_settings')
+                .insert({
+                  user_id: session.user.id,
+                  phone_number: phone,
+                  audio_enabled: true,
+                  voice_recognition_enabled: true,
+                  voice_type: 'alloy'
+                });
+            }
+          }
+        } else {
+          console.log("Aucune session trouvée");
+          setIsAuthenticated(false);
+          setPhoneNumber(null);
         }
       } catch (err) {
         console.error("Exception lors de la vérification de la session:", err);
@@ -47,40 +80,21 @@ function App() {
     
     checkSession();
     
-    // Écouter les changements d'authentification
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log("Événement auth:", event, session ? "Connecté" : "Non connecté");
       
       if (event === 'SIGNED_IN' && session?.user) {
-        console.log("Utilisateur connecté:", session.user);
         setIsAuthenticated(true);
         
-        if (session.user.phone) {
-          localStorage.setItem('userWhatsAppNumber', session.user.phone);
-        }
-        
-        // Vérifier si l'utilisateur a des paramètres
-        const { data: settings } = await supabase
-          .from('user_settings')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .single();
-        
-        if (!settings && session.user.phone) {
-          // Créer les paramètres par défaut
-          await supabase
-            .from('user_settings')
-            .insert({
-              user_id: session.user.id,
-              phone_number: session.user.phone,
-              audio_enabled: true,
-              voice_recognition_enabled: true,
-              voice_type: 'alloy'
-            });
+        const phone = session.user.phone || localStorage.getItem('userWhatsAppNumber');
+        if (phone) {
+          setPhoneNumber(phone);
+          localStorage.setItem('userWhatsAppNumber', phone);
         }
       } else if (event === 'SIGNED_OUT') {
         console.log("Utilisateur déconnecté");
         setIsAuthenticated(false);
+        setPhoneNumber(null);
         localStorage.removeItem('userWhatsAppNumber');
       }
     });
@@ -99,13 +113,13 @@ function App() {
     );
   }
 
-  console.log("Rendu avec statut d'authentification:", isAuthenticated);
-
   const router = createBrowserRouter([
     {
       path: '/',
       element: !isAuthenticated ? (
         <AuthContainer onSuccess={() => setIsAuthenticated(true)} />
+      ) : phoneNumber ? (
+        <Layout phoneNumber={phoneNumber} onLogout={() => setIsAuthenticated(false)} />
       ) : (
         <Navigate to="/admin" replace />
       ),
