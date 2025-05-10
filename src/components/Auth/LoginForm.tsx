@@ -31,20 +31,23 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
 
       if (signInError) {
         if (signInError.message === 'Invalid login credentials') {
-          throw new Error('Email ou mot de passe incorrect');
+          throw new Error('Email ou mot de passe incorrect. Veuillez vérifier vos informations.');
+        } else if (signInError.message.includes('Email not confirmed')) {
+          throw new Error('Veuillez confirmer votre email avant de vous connecter.');
+        } else {
+          throw new Error('Une erreur est survenue lors de la connexion. Veuillez réessayer.');
         }
-        throw signInError;
       }
 
       if (data?.user) {
         console.log('Connexion réussie:', data.user.email);
         onSuccess();
       } else {
-        throw new Error('Erreur inattendue lors de la connexion');
+        throw new Error('Une erreur inattendue est survenue. Veuillez réessayer.');
       }
     } catch (err) {
       console.error('Erreur de connexion:', err);
-      setError(err instanceof Error ? err.message : 'Erreur lors de la connexion');
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue lors de la connexion');
     } finally {
       setIsLoading(false);
     }
