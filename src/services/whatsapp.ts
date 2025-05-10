@@ -1,5 +1,4 @@
 // src/services/whatsapp.ts
-import { TwilioResponse } from '../types';
 
 interface SendMessageParams {
   to: string;

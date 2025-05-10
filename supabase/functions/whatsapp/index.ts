@@ -48,13 +48,15 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    console.log(`Envoi d'un message WhatsApp à ${to}`);
+    // S'assurer que le numéro commence par +
+    const formattedTo = to.startsWith('+') ? to : `+${to}`;
+    console.log(`Envoi d'un message WhatsApp à ${formattedTo}`);
 
     // Préparation de la requête Twilio pour WhatsApp
     const twilioEndpoint = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
     const formData = new URLSearchParams();
-    formData.append('To', `whatsapp:${to}`); // Format WhatsApp pour Twilio
-    formData.append('From', `whatsapp:+14155238886`);
+    formData.append('To', `whatsapp:${formattedTo}`);
+    formData.append('From', 'whatsapp:+14155238886');
     formData.append('Body', message);
 
     // Appel à l'API Twilio
@@ -94,7 +96,7 @@ Deno.serve(async (req: Request) => {
 
     // Traitement de la réponse de Twilio
     const data = await twilioResponse.json();
-    console.log("Réponse Twilio:", data.sid);
+    console.log("Message WhatsApp envoyé avec succès:", data.sid);
 
     // Retour de la réponse au client
     return new Response(
