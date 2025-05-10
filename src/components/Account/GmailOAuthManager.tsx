@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Mail, AlertCircle, CheckCircle2, LogOut } from 'lucide-react';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
 import { getGmailTokens } from '../../services/gmail';
+import Alert from '../ui/Alert';
+import Spinner from '../ui/Spinner';
 
 interface GmailOAuthManagerProps {
   phoneNumber: string;
@@ -91,7 +93,7 @@ const GmailOAuthManager: React.FC<GmailOAuthManagerProps> = ({ phoneNumber }) =>
     return (
       <div className="bg-white shadow rounded-lg p-6">
         <div className="flex justify-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500"></div>
+          <Spinner size="md" className="text-green-500" />
         </div>
       </div>
     );
@@ -105,10 +107,9 @@ const GmailOAuthManager: React.FC<GmailOAuthManagerProps> = ({ phoneNumber }) =>
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-          <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-red-600">{error}</p>
-        </div>
+        <Alert variant="error" className="mb-4">
+          {error}
+        </Alert>
       )}
 
       {isConnected ? (
@@ -158,8 +159,17 @@ const GmailOAuthManager: React.FC<GmailOAuthManagerProps> = ({ phoneNumber }) =>
             disabled={isLoading}
             className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-green-300 transition-colors"
           >
-            <Mail className="h-4 w-4" />
-            Se connecter avec Gmail
+            {isLoading ? (
+              <>
+                <Spinner size="sm" className="text-white" />
+                <span>Connexion en cours...</span>
+              </>
+            ) : (
+              <>
+                <Mail className="h-4 w-4" />
+                <span>Se connecter avec Gmail</span>
+              </>
+            )}
           </button>
         </div>
       )}
