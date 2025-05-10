@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { createClient } from '@supabase/supabase-js';
-import { SessionContextProvider } from '@supabase/auth-helpers-react';
+import { SessionContextProvider, useSession } from '@supabase/auth-helpers-react';
 import Layout from './components/Layout';
 import AdminLayout from './components/Admin/AdminLayout';
 import Dashboard from './components/Admin/Dashboard';
@@ -10,6 +10,7 @@ import WhatsAppConfig from './components/Admin/WhatsAppConfig';
 import AudioConfig from './components/Admin/AudioConfig';
 import WhatsAppSetup from './components/WhatsApp/WhatsAppSetup';
 import EmailConnect from './components/Account/EmailConnect';
+import LoginForm from './components/Auth/LoginForm';
 import { signOut } from './services/auth';
 
 const supabase = createClient(
@@ -20,6 +21,7 @@ const supabase = createClient(
 function App() {
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const session = useSession();
 
   useEffect(() => {
     const savedNumber = localStorage.getItem('userWhatsAppNumber');
@@ -46,7 +48,9 @@ function App() {
   const router = createBrowserRouter([
     {
       path: '/',
-      element: phoneNumber ? (
+      element: !session ? (
+        <LoginForm onSuccess={() => window.location.reload()} />
+      ) : phoneNumber ? (
         <Layout phoneNumber={phoneNumber} onLogout={handleLogout} />
       ) : (
         <WhatsAppSetup onSetup={setPhoneNumber} />
@@ -58,7 +62,7 @@ function App() {
     },
     {
       path: '/admin',
-      element: phoneNumber ? <AdminLayout /> : <Navigate to="/" />,
+      element: session && phoneNumber ? <AdminLayout /> : <Navigate to="/" />,
       children: [
         {
           index: true,
