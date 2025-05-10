@@ -1,4 +1,3 @@
-// Modification du fichier services/auth.ts
 import { supabase } from './supabase';
 
 export async function signInWithEmail(email: string, password: string) {

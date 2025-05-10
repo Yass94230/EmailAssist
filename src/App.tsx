@@ -23,18 +23,18 @@ function App() {
     const checkSession = async () => {
       try {
         console.log("Récupération de la session...");
-        const { data, error } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
           console.error("Erreur lors de la récupération de la session:", error);
           setIsAuthenticated(false);
         } else {
-          console.log("Session récupérée:", data.session ? "Connecté" : "Non connecté");
-          setIsAuthenticated(!!data.session);
+          console.log("Session récupérée:", session ? "Connecté" : "Non connecté");
+          setIsAuthenticated(!!session);
           
           // Si connecté, récupérer le numéro de téléphone
-          if (data.session?.user?.phone) {
-            localStorage.setItem('userWhatsAppNumber', data.session.user.phone);
+          if (session?.user?.phone) {
+            localStorage.setItem('userWhatsAppNumber', session.user.phone);
           }
         }
       } catch (err) {
@@ -48,26 +48,40 @@ function App() {
     checkSession();
     
     // Écouter les changements d'authentification
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log("Événement auth:", event, session ? "Connecté" : "Non connecté");
-      setIsAuthenticated(!!session);
       
-      // Si l'utilisateur se connecte, mettre à jour les informations locales
       if (event === 'SIGNED_IN' && session?.user) {
         console.log("Utilisateur connecté:", session.user);
+        setIsAuthenticated(true);
+        
         if (session.user.phone) {
           localStorage.setItem('userWhatsAppNumber', session.user.phone);
         }
-        // Rediriger vers /admin après connexion
-        window.location.href = '/admin';
-      }
-      
-      // Si l'utilisateur se déconnecte, supprimer les informations locales
-      if (event === 'SIGNED_OUT') {
+        
+        // Vérifier si l'utilisateur a des paramètres
+        const { data: settings } = await supabase
+          .from('user_settings')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .single();
+        
+        if (!settings && session.user.phone) {
+          // Créer les paramètres par défaut
+          await supabase
+            .from('user_settings')
+            .insert({
+              user_id: session.user.id,
+              phone_number: session.user.phone,
+              audio_enabled: true,
+              voice_recognition_enabled: true,
+              voice_type: 'alloy'
+            });
+        }
+      } else if (event === 'SIGNED_OUT') {
         console.log("Utilisateur déconnecté");
+        setIsAuthenticated(false);
         localStorage.removeItem('userWhatsAppNumber');
-        // Rediriger vers la page d'accueil après déconnexion
-        window.location.href = '/';
       }
     });
     
@@ -76,13 +90,6 @@ function App() {
       authListener.subscription.unsubscribe();
     };
   }, []);
-
-  // Fonction de redirection après connexion
-  const handleAuthSuccess = () => {
-    console.log("Authentification réussie dans App.tsx");
-    setIsAuthenticated(true);
-    // La redirection est gérée par l'écouteur onAuthStateChange
-  };
 
   if (isLoading) {
     return (
@@ -98,7 +105,7 @@ function App() {
     {
       path: '/',
       element: !isAuthenticated ? (
-        <AuthContainer onSuccess={handleAuthSuccess} />
+        <AuthContainer onSuccess={() => setIsAuthenticated(true)} />
       ) : (
         <Navigate to="/admin" replace />
       ),
@@ -133,7 +140,6 @@ function App() {
         },
       ],
     },
-    // Route pour la redirection après confirmation d'email
     {
       path: '/auth/callback',
       element: <Navigate to="/admin" replace />,
