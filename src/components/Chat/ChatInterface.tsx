@@ -9,6 +9,7 @@ import { Alert } from '../ui/Alert';
 import { Message } from '../../types';
 import { generateResponse } from '../../services/claude';
 import { sendMessageToCurrentUser } from '../../services/whatsapp';
+import { generateEmailConnectionLink } from '../../services/email';
 
 interface ChatInterfaceProps {
   phoneNumber: string;
@@ -59,6 +60,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     setIsLoading(true);
     
     try {
+      // Check if the user wants to connect email
+      if (inputValue.toLowerCase().includes('connecter email')) {
+        const connectionLink = await generateEmailConnectionLink(phoneNumber);
+        const response: Message = {
+          id: `msg-${Date.now()}-assistant`,
+          content: `Pour connecter votre compte email, cliquez sur ce lien :\n\n${connectionLink}\n\nCe lien est valable pendant 24 heures et ne peut être utilisé qu'une seule fois pour des raisons de sécurité.`,
+          timestamp: new Date(),
+          direction: 'incoming'
+        };
+        setMessages(prev => [...prev, response]);
+        await sendMessageToCurrentUser(response.content);
+        setIsLoading(false);
+        return;
+      }
+
       // Get user settings or create with defaults if they don't exist
       const { data: settings, error: settingsError } = await supabase
         .from('user_settings')

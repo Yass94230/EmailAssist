@@ -21,7 +21,8 @@ export async function generateEmailConnectionLink(phoneNumber: string): Promise<
     });
 
     if (!response.ok) {
-      throw new Error('Erreur lors de la génération du lien');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Erreur lors de la génération du lien');
     }
 
     const data = await response.json();
@@ -38,7 +39,7 @@ export async function getEmailCredentials(phoneNumber: string) {
       .from('email_credentials')
       .select('email, provider')
       .eq('phone_number', phoneNumber)
-      .single();
+      .maybeSingle();
 
     if (error) {
       throw error;
