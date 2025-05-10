@@ -8,7 +8,7 @@ interface AlertProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const Alert = React.forwardRef<HTMLDivElement, AlertProps>(
-  ({ className, variant = 'default', title, children, ...props }, ref) => {
+  ({ className = '', variant = 'default', title, children, ...props }, ref) => {
     const variants = {
       default: {
         container: "bg-blue-50 border-blue-200 text-blue-800",

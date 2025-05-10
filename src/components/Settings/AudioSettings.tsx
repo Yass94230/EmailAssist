@@ -9,13 +9,12 @@ interface AudioSettingsProps {
 }
 
 const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
+  const supabase = useSupabaseClient<Database>();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [voiceType, setVoiceType] = useState('alloy');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  
-  const supabase = useSupabaseClient<Database>();
   
   useEffect(() => {
     if (phoneNumber) {
@@ -24,7 +23,7 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
   }, [phoneNumber]);
   
   const loadSettings = async () => {
-    if (!phoneNumber) return;
+    if (!phoneNumber || !supabase) return;
     
     setIsLoading(true);
     setError(null);
@@ -53,7 +52,7 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
   };
   
   const saveSettings = async () => {
-    if (!phoneNumber) return;
+    if (!phoneNumber || !supabase) return;
     
     setError(null);
     setSuccess(null);
@@ -95,7 +94,7 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
       ) : (
         <>
           {error && (
-            <Alert variant="error" className="mb-4">
+            <Alert variant="destructive" className="mb-4">
               {error}
             </Alert>
           )}
