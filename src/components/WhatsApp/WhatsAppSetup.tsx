@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Card } from '../ui/Card';
 import { Alert } from '../ui/Alert';
 import { Spinner } from '../ui/Spinner';
-import { signInWithPhone, verifyOtp } from '../../services/auth';
-import { registerWhatsAppNumber } from '../../services/whatsapp';
+import { registerWhatsAppNumber, verifyWhatsAppNumber } from '../../services/whatsapp';
 
 interface WhatsAppSetupProps {
   onSetup: (phoneNumber: string) => void;
@@ -13,39 +12,26 @@ interface WhatsAppSetupProps {
 
 const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [otp, setOtp] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [showOtpInput, setShowOtpInput] = useState(false);
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
 
     try {
-      await signInWithPhone(phoneNumber);
-      setShowOtpInput(true);
-      setSuccess('Code de vérification envoyé par SMS');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur lors de l\'envoi du code');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      await verifyOtp(phoneNumber, otp);
       await registerWhatsAppNumber(phoneNumber);
-      onSetup(phoneNumber);
+      const isVerified = await verifyWhatsAppNumber(phoneNumber);
+
+      if (isVerified) {
+        onSetup(phoneNumber);
+      } else {
+        setSuccess('Pour activer WhatsApp, envoyez "join" au numéro +14155238886');
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur lors de la vérification');
+      setError(err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement');
     } finally {
       setIsLoading(false);
     }
@@ -68,74 +54,40 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
           </Alert>
         )}
 
-        {!showOtpInput ? (
-          <form onSubmit={handleSendOtp}>
-            <div className="mb-4">
-              <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-1">
-                Numéro de téléphone
-              </label>
-              <Input
-                id="phoneNumber"
-                type="tel"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                placeholder="+33612345678"
-                required
-                disabled={isLoading}
-              />
-              <p className="mt-1 text-sm text-gray-500">
-                Format international (ex: +33612345678)
-              </p>
-            </div>
-
-            <Button
-              type="submit"
+        <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label htmlFor="phoneNumber" className="block text-sm font-medium text-gray-700 mb-1">
+              Numéro de téléphone WhatsApp
+            </label>
+            <Input
+              id="phoneNumber"
+              type="tel"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              placeholder="+33612345678"
+              required
               disabled={isLoading}
-              className="w-full"
-            >
-              {isLoading ? (
-                <>
-                  <Spinner size="sm" className="mr-2" />
-                  Envoi en cours...
-                </>
-              ) : (
-                'Envoyer le code'
-              )}
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={handleVerifyOtp}>
-            <div className="mb-4">
-              <label htmlFor="otp" className="block text-sm font-medium text-gray-700 mb-1">
-                Code de vérification
-              </label>
-              <Input
-                id="otp"
-                type="text"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                placeholder="123456"
-                required
-                disabled={isLoading}
-              />
-            </div>
+            />
+            <p className="mt-1 text-sm text-gray-500">
+              Format international (ex: +33612345678)
+            </p>
+          </div>
 
-            <Button
-              type="submit"
-              disabled={isLoading}
-              className="w-full"
-            >
-              {isLoading ? (
-                <>
-                  <Spinner size="sm" className="mr-2" />
-                  Vérification...
-                </>
-              ) : (
-                'Vérifier'
-              )}
-            </Button>
-          </form>
-        )}
+          <Button
+            type="submit"
+            disabled={isLoading}
+            className="w-full"
+          >
+            {isLoading ? (
+              <>
+                <Spinner size="sm" className="mr-2" />
+                Enregistrement...
+              </>
+            ) : (
+              'Configurer WhatsApp'
+            )}
+          </Button>
+        </form>
       </Card>
     </div>
   );

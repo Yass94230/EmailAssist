@@ -17,11 +17,6 @@ function formatPhoneNumber(number: string): string {
 export async function registerWhatsAppNumber(phoneNumber: string): Promise<void> {
   try {
     const formattedNumber = formatPhoneNumber(phoneNumber);
-    
-    // Get current user session
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-    if (sessionError) throw sessionError;
-    if (!session?.user?.id) throw new Error('No authenticated user found');
 
     // Check if the phone number is already registered in user_settings
     const { data: existingSettings } = await supabase
@@ -44,23 +39,14 @@ export async function registerWhatsAppNumber(phoneNumber: string): Promise<void>
     
     if (settingsError) throw settingsError;
 
-    // Check if WhatsApp number is already registered for this user
-    const { data: existingWhatsApp } = await supabase
-      .from('user_whatsapp')
-      .select('id')
-      .eq('user_id', session.user.id)
-      .eq('phone_number', formattedNumber)
-      .single();
-
-    // Register or update WhatsApp number
+    // Register WhatsApp number
     const { error: whatsappError } = await supabase
       .from('user_whatsapp')
       .upsert({
-        user_id: session.user.id,
         phone_number: formattedNumber,
         updated_at: new Date().toISOString()
       }, {
-        onConflict: 'user_id, phone_number'
+        onConflict: 'phone_number'
       });
 
     if (whatsappError) throw whatsappError;
@@ -147,13 +133,9 @@ export async function getCurrentWhatsAppNumber(): Promise<string | null> {
     if (cachedNumber) return cachedNumber;
 
     // If not in localStorage, check database
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) return null;
-
     const { data, error } = await supabase
       .from('user_whatsapp')
       .select('phone_number')
-      .eq('user_id', session.user.id)
       .single();
 
     if (error) throw error;
