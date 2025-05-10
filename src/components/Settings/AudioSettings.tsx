@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Volume2, VolumeX, Mic, Settings2 } from 'lucide-react';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 interface AudioSettingsProps {
   phoneNumber: string;
@@ -13,7 +14,7 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   
-  const supabase = useSupabaseClient();
+  const supabase = useSupabaseClient<SupabaseClient>();
   
   useEffect(() => {
     if (phoneNumber) {
@@ -41,9 +42,7 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
       }
       
       if (data) {
-        // Conversion sécurisée des valeurs booléennes
         setAudioEnabled(data.audio_enabled === true);
-        // Vérifier si voice_type existe et est une chaîne non vide
         if (data.voice_type && typeof data.voice_type === 'string') {
           setVoiceType(data.voice_type);
         } else {
@@ -52,7 +51,7 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
       }
     } catch (err) {
       console.error('Erreur lors du chargement des paramètres:', err);
-      setError(err instanceof Error ? err.message : 'Erreur lors du chargement des paramètres');
+      setError('Erreur lors du chargement des paramètres audio. Veuillez réessayer.');
     } finally {
       setIsLoading(false);
     }
@@ -77,10 +76,10 @@ const AudioSettings: React.FC<AudioSettingsProps> = ({ phoneNumber }) => {
         
       if (error) throw error;
       
-      setSuccess('Paramètres audio enregistrés');
+      setSuccess('Paramètres audio enregistrés avec succès');
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement');
+      setError('Erreur lors de l\'enregistrement des paramètres audio. Veuillez réessayer.');
       console.error('Erreur lors de l\'enregistrement des paramètres:', err);
     } finally {
       setIsLoading(false);
