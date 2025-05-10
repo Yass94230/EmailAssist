@@ -17,7 +17,6 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
   const [success, setSuccess] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
-  // Vérifier le statut toutes les 5 secondes après l'envoi de "join"
   useEffect(() => {
     let interval: NodeJS.Timeout;
     
@@ -126,6 +125,6 @@ const WhatsAppSetup: React.FC<WhatsAppSetupProps> = ({ onSetup }) => {
       </Card>
     </div>
   );
-};
+}
 
 export default WhatsAppSetup;
