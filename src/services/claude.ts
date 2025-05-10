@@ -50,7 +50,6 @@ export async function generateResponse(
       text: data.response
     };
 
-    // If audio was generated, create a data URL for the audio
     if (data.audio) {
       result.audioUrl = `data:audio/mp3;base64,${data.audio}`;
     }

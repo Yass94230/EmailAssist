@@ -56,7 +56,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     setIsLoading(true);
     
     try {
-      // Récupérer les paramètres audio
       const { data: settings } = await supabase
         .from('user_settings')
         .select('audio_enabled, voice_type')
@@ -66,7 +65,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       const response = await generateResponse(inputValue, {
         generateAudio: settings?.audio_enabled ?? true,
         voiceType: settings?.voice_type || 'alloy',
-        phoneNumber // Ajouter le numéro de téléphone pour la génération du lien
+        phoneNumber
       });
       
       const assistantMessage: Message = {
