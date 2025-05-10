@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Play, Pause, Volume2, Download } from 'lucide-react';
+import { Play, Pause, Volume2, Download, MessageSquare } from 'lucide-react';
 import WaveSurfer from 'wavesurfer.js';
 import { Message } from '../../types';
 import { Button } from '../ui/Button';
@@ -14,6 +14,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isAudioLoaded, setIsAudioLoaded] = useState(false);
+  const [showTranscription, setShowTranscription] = useState(false);
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurferRef = useRef<WaveSurfer | null>(null);
   
@@ -87,6 +88,10 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
   
+  const toggleTranscription = () => {
+    setShowTranscription(!showTranscription);
+  };
+  
   return (
     <div className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
       <div 
@@ -96,8 +101,29 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
             : 'bg-white text-gray-800 shadow-sm border border-gray-100'
         }`}
       >
+        {/* Afficher le contenu du message */}
         <p className="text-sm whitespace-pre-wrap">{message.content}</p>
         
+        {/* Afficher la transcription si disponible et activée */}
+        {message.transcription && (
+          <div className="mt-2">
+            {showTranscription ? (
+              <div className="bg-gray-100 p-2 rounded text-gray-800 text-xs">
+                <p className="font-medium mb-1">Transcription:</p>
+                <p>{message.transcription}</p>
+              </div>
+            ) : (
+              <button 
+                onClick={toggleTranscription}
+                className={`text-xs underline ${isOutgoing ? 'text-white' : 'text-gray-500'}`}
+              >
+                Afficher la transcription
+              </button>
+            )}
+          </div>
+        )}
+        
+        {/* Lecteur audio si disponible */}
         {message.audioUrl && (
           <div className={`mt-2 space-y-2 ${
             isOutgoing ? 'text-white' : 'text-gray-600'
@@ -116,11 +142,14 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
               <span className="text-xs">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
+              {message.direction === 'incoming' && (
+                <MessageSquare size={14} className="ml-auto" title="Message généré par Claude" />
+              )}
               <Button
                 onClick={downloadAudio}
                 variant="ghost"
                 size="sm"
-                className="p-1 hover:bg-opacity-10 ml-auto"
+                className="p-1 hover:bg-opacity-10"
                 title="Télécharger l'audio"
               >
                 <Download size={14} />
