@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useSupabaseClient } from '@supabase/auth-helpers-react';
 import { Mail, Lock, LogIn } from 'lucide-react';
 import { Button } from '../ui/Button';
@@ -17,6 +18,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
   const [error, setError] = useState<string | null>(null);
   
   const supabase = useSupabaseClient();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,8 +44,12 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSuccess, onRegister }) => {
       if (data?.user) {
         console.log('Connexion réussie:', data.user.email);
         
-        // Redirection directe vers le tableau de bord admin
+        // Appeler onSuccess pour informer le parent
         onSuccess();
+        
+        // Puis rediriger vers le panneau d'administration
+        console.log('Redirection vers /admin');
+        navigate('/admin');
       } else {
         throw new Error('Une erreur inattendue est survenue. Veuillez réessayer.');
       }
