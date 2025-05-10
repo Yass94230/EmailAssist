@@ -8,22 +8,27 @@ export async function getGmailTokens(phoneNumber: string): Promise<{ accessToken
       .from('gmail_credentials')
       .select('email, access_token, refresh_token, token_expires_at')
       .eq('phone_number', phoneNumber)
-      .single();
+      .maybeSingle(); // Changed from single() to maybeSingle() to handle no results gracefully
     
-    if (error || !data) {
-      console.error('Erreur lors de la récupération des tokens Gmail:', error);
+    if (error) {
+      console.error('Error retrieving Gmail tokens:', error);
       return null;
     }
     
-    // Vérifier si le token est expiré
+    if (!data) {
+      console.log('No Gmail credentials found for phone number:', phoneNumber);
+      return null;
+    }
+    
+    // Check if token is expired
     if (new Date(data.token_expires_at) <= new Date()) {
-      // Rafraîchir le token
+      // Refresh token
       if (!data.refresh_token) {
-        console.error('Pas de refresh token disponible');
+        console.error('No refresh token available');
         return null;
       }
       
-      // Appeler la fonction de rafraîchissement
+      // Call refresh function
       const refreshed = await refreshAccessToken(phoneNumber, data.refresh_token);
       if (!refreshed) {
         return null;
@@ -40,7 +45,7 @@ export async function getGmailTokens(phoneNumber: string): Promise<{ accessToken
       email: data.email
     };
   } catch (error) {
-    console.error('Erreur lors de la récupération des tokens Gmail:', error);
+    console.error('Error retrieving Gmail tokens:', error);
     return null;
   }
 }
@@ -60,7 +65,7 @@ async function refreshAccessToken(phoneNumber: string, refreshToken: string): Pr
     });
     
     if (!response.ok) {
-      throw new Error(`Erreur lors du rafraîchissement du token: ${response.statusText}`);
+      throw new Error(`Error refreshing token: ${response.statusText}`);
     }
     
     const data = await response.json();
@@ -68,7 +73,7 @@ async function refreshAccessToken(phoneNumber: string, refreshToken: string): Pr
       accessToken: data.access_token
     };
   } catch (error) {
-    console.error('Erreur lors du rafraîchissement du token:', error);
+    console.error('Error refreshing token:', error);
     return null;
   }
 }
