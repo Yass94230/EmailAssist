@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Mic, MicOff } from 'lucide-react';
-import { useSupabaseClient } from '@supabase/auth-helpers-react';
+import { useSupabaseClient, useSession } from '@supabase/auth-helpers-react';
 import ChatHeader from './ChatHeader';
 import ChatMessage from './ChatMessage';
 import { Button } from '../ui/Button';
@@ -30,6 +30,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sentMessagesRef = useRef<Set<string>>(new Set());
   const supabase = useSupabaseClient();
+  const session = useSession();
 
   useEffect(() => {
     return () => {
@@ -138,32 +139,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   };
   
   const handleAudioInput = async (audioBase64: string, messageId: string) => {
-    if (isLoading) return;
+    if (isLoading || !session) return;
     
     setError(null);
     setIsLoading(true);
     
     try {
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        throw new Error('Erreur de session: ' + sessionError.message);
-      }
-      
-      if (!sessionData.session) {
-        throw new Error('Session expirée. Veuillez rafraîchir la page et vous reconnecter.');
-      }
-
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      
-      if (authError) {
-        throw new Error('Erreur d\'authentification: ' + authError.message);
-      }
-      
-      if (!user) {
-        throw new Error('Session expirée. Veuillez rafraîchir la page et vous reconnecter.');
-      }
-
       const response = await generateResponse("", {
         generateAudio: isAudioEnabled,
         voiceType,
@@ -211,7 +192,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   };
   
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || isLoading) return;
+    if (!inputValue.trim() || isLoading || !session) return;
     
     setError(null);
     
@@ -232,20 +213,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     sentMessagesRef.current.add(userMessage.id);
     
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      
-      if (authError) {
-        throw new Error('Erreur d\'authentification: ' + authError.message);
-      }
-      
-      if (!user) {
-        const authErrorMessage = 'Session expirée. Veuillez rafraîchir la page et vous reconnecter.';
-        setError(authErrorMessage);
-        setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
-        sentMessagesRef.current.delete(userMessage.id);
-        return;
-      }
-
       if (inputValue.toLowerCase().includes('connecter email')) {
         const connectionLink = await generateEmailConnectionLink(phoneNumber);
         const response: Message = {
@@ -280,7 +247,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
           .from('user_settings')
           .insert({
             phone_number: phoneNumber,
-            user_id: user.id,
+            user_id: session.user.id,
             audio_enabled: true,
             voice_recognition_enabled: true,
             voice_type: 'alloy'
@@ -354,13 +321,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
             onKeyDown={handleKeyDown}
             className="flex-1 resize-none rounded-lg border border-gray-300 p-2 focus:outline-none focus:ring-2 focus:ring-green-500"
             rows={1}
-            disabled={isLoading || isRecording}
+            disabled={isLoading || isRecording || !session}
           />
           
           {isVoiceRecognitionEnabled && (
             <Button
               onClick={isRecording ? stopRecording : startRecording}
-              disabled={isLoading}
+              disabled={isLoading || !session}
               className={`p-2 rounded-full ${
                 isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-purple-500 hover:bg-purple-600'
               }`}
@@ -376,7 +343,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
           
           <Button
             onClick={handleSendMessage}
-            disabled={isLoading || isRecording || !inputValue.trim()}
+            disabled={isLoading || isRecording || !inputValue.trim() || !session}
             className="p-2 rounded-full"
             variant="primary"
           >
