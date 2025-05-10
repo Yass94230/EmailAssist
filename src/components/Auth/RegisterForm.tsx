@@ -31,11 +31,14 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
     setIsLoading(true);
 
     try {
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          data: {
+            email_confirmed: true // Auto-confirm email for direct access
+          }
         }
       });
 
@@ -46,12 +49,30 @@ const RegisterForm: React.FC<RegisterFormProps> = ({ onSuccess, onBackToLogin })
         throw signUpError;
       }
 
+      if (data?.user) {
+        // Create default user settings
+        const { error: settingsError } = await supabase
+          .from('user_settings')
+          .insert({
+            user_id: data.user.id,
+            audio_enabled: true,
+            voice_recognition_enabled: true,
+            voice_type: 'alloy'
+          });
+
+        if (settingsError) {
+          console.error('Error creating user settings:', settingsError);
+        }
+
+        // Redirect to admin interface
+        window.location.href = '/admin';
+      }
+
       onSuccess();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Erreur lors de l\'inscription';
       setError(errorMessage);
       
-      // If the user already exists, show the login button more prominently
       if (errorMessage.includes('compte existe déjà')) {
         setTimeout(() => {
           const loginButton = document.querySelector('button[type="button"]');
