@@ -53,4 +53,4 @@ Alert.displayName = "Alert";
 
 export { Alert };
 
-export default Alert
+export default Alert;

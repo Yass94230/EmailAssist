@@ -54,4 +54,4 @@ Input.displayName = "Input";
 
 export default Input;
 
-export { Input }
+export { Input };
