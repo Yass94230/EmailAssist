@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Menu, X, ChevronDown, ChevronRight, Bell, LogOut, Settings, Mail } from 'lucide-react';
+import { Menu, X, Bell, LogOut, Settings, Mail } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import AudioSettings from '../Settings/AudioSettings';
 
 interface SidebarProps {
   onClose: () => void;
@@ -10,17 +9,6 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ onClose, phoneNumber, onLogout }) => {
-  const [expandedSections, setExpandedSections] = useState({
-    settings: false
-  });
-
-  const toggleSection = (section: 'settings') => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [section]: !prev[section]
-    }));
-  };
-
   const handleLogoutClick = () => {
     if (window.confirm('Êtes-vous sûr de vouloir vous déconnecter ?')) {
       onLogout();
@@ -48,34 +36,13 @@ const Sidebar: React.FC<SidebarProps> = ({ onClose, phoneNumber, onLogout }) => 
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {/* Section Paramètres */}
-        <div>
-          <button
-            onClick={() => toggleSection('settings')}
-            className="w-full flex items-center justify-between p-2 hover:bg-gray-100 rounded-lg"
-          >
-            <span className="font-medium">Paramètres</span>
-            {expandedSections.settings ? (
-              <ChevronDown size={20} />
-            ) : (
-              <ChevronRight size={20} />
-            )}
-          </button>
-          
-          {expandedSections.settings && (
-            <div className="mt-2 space-y-4">
-              <AudioSettings phoneNumber={phoneNumber} />
-            </div>
-          )}
-        </div>
-
         {/* Lien vers l'interface d'administration */}
         <Link
-          to="/admin"
+          to="/admin/email"
           className="w-full flex items-center p-2 rounded-lg hover:bg-gray-100"
         >
           <Settings size={18} className="mr-2 text-gray-500" />
-          <span className="text-sm font-medium">Administration</span>
+          <span className="text-sm font-medium">Configuration</span>
         </Link>
       </div>
 
