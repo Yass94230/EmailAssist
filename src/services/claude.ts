@@ -4,6 +4,8 @@ interface GenerateResponseOptions {
   generateAudio?: boolean;
   voiceType?: string;
   phoneNumber?: string;
+  isAudioInput?: boolean;
+  audioData?: string;
 }
 
 interface GenerateResponseResult {
@@ -22,18 +24,26 @@ export async function generateResponse(
   }
 
   try {
+    const payload: any = {
+      prompt,
+      generateAudio: options.generateAudio,
+      voiceType: options.voiceType,
+      phoneNumber: options.phoneNumber
+    };
+
+    // Si l'entrée est un audio, ajouter les données audio
+    if (options.isAudioInput && options.audioData) {
+      payload.isAudioInput = true;
+      payload.audioData = options.audioData;
+    }
+
     const response = await fetch(`${supabaseUrl}/functions/v1/claude`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
       },
-      body: JSON.stringify({
-        prompt,
-        generateAudio: options.generateAudio,
-        voiceType: options.voiceType,
-        phoneNumber: options.phoneNumber
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
