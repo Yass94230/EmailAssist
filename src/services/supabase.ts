@@ -1,15 +1,94 @@
 import { createClient } from '@supabase/supabase-js';
 import { EmailRule } from '../types';
 
+// Récupérer les variables d'environnement
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// Vérifier que les variables d'environnement sont définies
 if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Variables d\'environnement Supabase manquantes:',
+    { hasUrl: !!supabaseUrl, hasKey: !!supabaseAnonKey });
   throw new Error('Missing Supabase environment variables');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Log pour le débogage
+console.log('Initialisation du client Supabase avec URL:', 
+  supabaseUrl.substring(0, 15) + '...');
 
+// Créer le client Supabase avec des options explicites
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
+  }
+});
+
+// Fonction de test pour vérifier la connexion à Supabase
+export const testSupabaseConnection = async () => {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    
+    if (error) {
+      console.error('Erreur de connexion à Supabase (auth):', error);
+      return { connected: false, error };
+    }
+    
+    console.log('Connexion à Supabase établie, session:', 
+      data.session ? 'Authentifié' : 'Non authentifié');
+    return { connected: true, authenticated: !!data.session };
+  } catch (err) {
+    console.error('Exception lors de la connexion à Supabase:', err);
+    return { connected: false, error: err };
+  }
+};
+
+// Exécuter le test de connexion au chargement
+testSupabaseConnection().then(result => {
+  console.log('État initial Supabase:', result);
+});
+
+// Fonctions d'authentification améliorées
+export const signInWithEmail = async (email: string, password: string) => {
+  console.log('Tentative de connexion avec:', email);
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    console.log('Résultat auth.signInWithPassword:', { 
+      success: !error, 
+      hasUser: !!data?.user, 
+      hasSession: !!data?.session 
+    });
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Erreur détaillée de connexion:', error);
+    throw error;
+  }
+};
+
+export const signOut = async () => {
+  console.log('Tentative de déconnexion...');
+  try {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error('Erreur lors de la déconnexion:', error);
+      throw error;
+    }
+    console.log('Déconnexion réussie');
+    return { success: true };
+  } catch (error) {
+    console.error('Exception lors de la déconnexion:', error);
+    throw error;
+  }
+};
+
+// Vos fonctions CRUD pour les règles email (inchangées)
 export const getRules = async (): Promise<EmailRule[]> => {
   const { data, error } = await supabase
     .from('email_rules')
@@ -110,3 +189,5 @@ export const deleteRule = async (ruleId: string): Promise<void> => {
     throw error;
   }
 };
+
+export default supabase;
