@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Menu, X, ChevronDown, ChevronRight, Bell, LogOut, Mail } from 'lucide-react';
+import { Menu, X, ChevronDown, ChevronRight, Bell, LogOut, Mail, Settings } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import GmailOAuthManager from '../Account/GmailOAuthManager';
 import AudioSettings from '../Settings/AudioSettings';
 
@@ -44,7 +45,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onClose, phoneNumber, onLogout }) => 
           onClick={onClose}
           className="lg:hidden p-2 rounded-full hover:bg-gray-100"
         >
-          <ChevronRight size={20} />
+          <X size={20} />
         </button>
       </div>
 
@@ -90,6 +91,15 @@ const Sidebar: React.FC<SidebarProps> = ({ onClose, phoneNumber, onLogout }) => 
             </div>
           )}
         </div>
+
+        {/* Lien vers l'interface d'administration */}
+        <Link
+          to="/admin"
+          className="w-full flex items-center p-2 rounded-lg hover:bg-gray-100"
+        >
+          <Settings size={18} className="mr-2 text-gray-500" />
+          <span className="text-sm font-medium">Administration</span>
+        </Link>
       </div>
 
       <div className="border-t border-gray-200 p-4 space-y-2">
