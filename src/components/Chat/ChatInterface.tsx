@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Mic, MicOff } from 'lucide-react';
+import { Send, Mic, MicOff, AlertCircle } from 'lucide-react';
 import { useSupabaseClient, useSession } from '@supabase/auth-helpers-react';
 import ChatHeader from './ChatHeader';
 import ChatMessage from './ChatMessage';
@@ -32,6 +32,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   const supabase = useSupabaseClient();
   const session = useSession();
 
+  // Fonction pour scroller automatiquement vers le bas de la conversation
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+  
+  // Scroller vers le bas quand les messages changent
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+  
+  // Nettoyer le MediaRecorder quand le composant est démonté
   useEffect(() => {
     return () => {
       if (mediaRecorder) {
@@ -40,14 +51,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     };
   }, [mediaRecorder]);
   
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-  
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-  
+  // Initialiser avec un message de bienvenue
   useEffect(() => {
     const welcomeMessage: Message = {
       id: 'welcome',
@@ -58,35 +62,48 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
 
     if (!sentMessagesRef.current.has(welcomeMessage.id)) {
       setMessages([welcomeMessage]);
-      sendMessageToCurrentUser(welcomeMessage.content).catch(console.error);
+      sendMessageToCurrentUser(welcomeMessage.content).catch(err => {
+        console.error("Erreur lors de l'envoi du message de bienvenue:", err);
+      });
       sentMessagesRef.current.add(welcomeMessage.id);
     }
     
     loadAudioSettings();
   }, []);
   
+  // Charger les paramètres audio de l'utilisateur
   const loadAudioSettings = async () => {
     try {
+      console.log("Chargement des paramètres audio pour:", phoneNumber);
       const { data, error } = await supabase
         .from('user_settings')
         .select('audio_enabled, voice_recognition_enabled, voice_type')
         .eq('phone_number', phoneNumber)
         .maybeSingle();
         
-      if (error) throw error;
+      if (error) {
+        console.error("Erreur lors du chargement des paramètres audio:", error);
+        throw error;
+      }
       
       if (data) {
+        console.log("Paramètres audio chargés:", data);
         setIsAudioEnabled(data.audio_enabled ?? true);
         setIsVoiceRecognitionEnabled(data.voice_recognition_enabled ?? true);
         setVoiceType(data.voice_type || 'alloy');
+      } else {
+        console.log("Aucun paramètre audio trouvé, utilisation des valeurs par défaut");
       }
     } catch (err) {
       console.error('Erreur lors du chargement des paramètres audio:', err);
+      // Continuer avec les valeurs par défaut en cas d'erreur
     }
   };
   
+  // Démarrer l'enregistrement audio
   const startRecording = async () => {
     try {
+      console.log("Demande d'accès au microphone...");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       setMediaRecorder(recorder);
@@ -99,6 +116,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       };
       
       recorder.onstop = async () => {
+        console.log("Enregistrement audio terminé");
         const audioBlob = new Blob(chunks, { type: 'audio/mp3' });
         setAudioChunks(chunks);
         
@@ -124,27 +142,35 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       
       recorder.start();
       setIsRecording(true);
+      console.log("Enregistrement audio démarré");
     } catch (err) {
       console.error('Erreur lors du démarrage de l\'enregistrement:', err);
       setError('Impossible d\'accéder au microphone. Veuillez vérifier les permissions.');
     }
   };
   
+  // Arrêter l'enregistrement audio
   const stopRecording = () => {
     if (mediaRecorder && isRecording) {
+      console.log("Arrêt de l'enregistrement audio");
       mediaRecorder.stop();
       mediaRecorder.stream.getTracks().forEach(track => track.stop());
       setIsRecording(false);
     }
   };
   
+  // Traiter un message audio
   const handleAudioInput = async (audioBase64: string, messageId: string) => {
-    if (isLoading || !session) return;
+    if (isLoading || !session) {
+      console.log("Impossible de traiter l'audio:", { isLoading, hasSession: !!session });
+      return;
+    }
     
     setError(null);
     setIsLoading(true);
     
     try {
+      console.log("Traitement du message audio...");
       const response = await generateResponse("", {
         generateAudio: isAudioEnabled,
         voiceType,
@@ -152,6 +178,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         isAudioInput: true,
         audioData: audioBase64
       });
+      
+      console.log("Réponse audio générée");
       
       setMessages(prev => 
         prev.map(msg => 
@@ -175,7 +203,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         sentMessagesRef.current.add(assistantMessage.id);
       }
     } catch (error) {
-      console.error('Error in handleAudioInput:', error);
+      console.error('Erreur lors du traitement du message audio:', error);
       const errorMessage = error instanceof Error ? error.message : 'Une erreur est survenue lors du traitement du message audio';
       setError(errorMessage);
       
@@ -191,9 +219,26 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     }
   };
   
+  // Gérer l'envoi d'un message texte
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || isLoading || !session) return;
+    // Vérification des prérequis
+    if (!inputValue.trim()) {
+      console.log("Message vide, annulation de l'envoi");
+      return;
+    }
     
+    if (isLoading) {
+      console.log("Déjà en cours de chargement, annulation de l'envoi");
+      return;
+    }
+    
+    if (!session) {
+      console.log("Pas de session utilisateur, annulation de l'envoi");
+      setError("Vous devez être connecté pour envoyer des messages.");
+      return;
+    }
+    
+    console.log("Préparation de l'envoi du message:", inputValue);
     setError(null);
     
     const userMessage: Message = {
@@ -204,34 +249,66 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     };
     
     if (sentMessagesRef.current.has(userMessage.id)) {
+      console.log("Message déjà envoyé, évitement du doublon");
       return;
     }
     
+    // Ajouter le message de l'utilisateur à la conversation
     setMessages(prev => [...prev, userMessage]);
-    setInputValue('');
+    const messageToSend = inputValue;
+    setInputValue(''); // Vider le champ de saisie immédiatement
     setIsLoading(true);
     sentMessagesRef.current.add(userMessage.id);
     
     try {
-      if (inputValue.toLowerCase().includes('connecter email')) {
-        const connectionLink = await generateEmailConnectionLink(phoneNumber);
-        const response: Message = {
-          id: `msg-${Date.now()}-assistant`,
-          content: `Pour connecter votre compte email, cliquez sur ce lien :\n\n${connectionLink}\n\nCe lien est valable pendant 24 heures et ne peut être utilisé qu'une seule fois pour des raisons de sécurité.`,
-          timestamp: new Date(),
-          direction: 'incoming'
-        };
+      // Gérer la commande "connecter email"
+      if (messageToSend.toLowerCase().includes('connecter email')) {
+        console.log("Détection de la commande 'connecter email'");
+        try {
+          console.log("Génération du lien de connexion pour:", phoneNumber);
+          const connectionLink = await generateEmailConnectionLink(phoneNumber);
+          
+          if (!connectionLink) {
+            throw new Error("Impossible de générer le lien de connexion");
+          }
+          
+          console.log("Lien de connexion généré:", connectionLink);
+          
+          const response: Message = {
+            id: `msg-${Date.now()}-assistant`,
+            content: `Pour connecter votre compte email, cliquez sur ce lien :\n\n${connectionLink}\n\nCe lien est valable pendant 24 heures et ne peut être utilisé qu'une seule fois pour des raisons de sécurité.`,
+            timestamp: new Date(),
+            direction: 'incoming'
+          };
 
-        if (!sentMessagesRef.current.has(response.id)) {
-          setMessages(prev => [...prev, response]);
-          await sendMessageToCurrentUser(response.content);
-          sentMessagesRef.current.add(response.id);
+          if (!sentMessagesRef.current.has(response.id)) {
+            setMessages(prev => [...prev, response]);
+            await sendMessageToCurrentUser(response.content);
+            sentMessagesRef.current.add(response.id);
+          }
+          
+          setIsLoading(false);
+          return;
+        } catch (error) {
+          console.error("Erreur lors de la génération du lien de connexion:", error);
+          const errorMsg = error instanceof Error ? error.message : "Erreur inconnue";
+          setError(`Erreur lors de la génération du lien de connexion: ${errorMsg}`);
+          
+          const errorResponse: Message = {
+            id: `msg-${Date.now()}-error`,
+            content: "Désolé, je n'ai pas pu générer le lien de connexion. Veuillez réessayer ou contacter le support.",
+            timestamp: new Date(),
+            direction: 'incoming'
+          };
+          
+          setMessages(prev => [...prev, errorResponse]);
+          setIsLoading(false);
+          return;
         }
-        
-        setIsLoading(false);
-        return;
       }
 
+      // Récupérer ou créer les paramètres utilisateur
+      console.log("Vérification des paramètres utilisateur");
       const { data: settings, error: settingsError } = await supabase
         .from('user_settings')
         .select('audio_enabled, voice_recognition_enabled, voice_type')
@@ -239,10 +316,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         .maybeSingle();
 
       if (settingsError) {
+        console.error("Erreur lors de la récupération des paramètres:", settingsError);
         throw new Error('Erreur lors de la récupération des paramètres: ' + settingsError.message);
       }
 
       if (!settings) {
+        console.log("Aucun paramètre trouvé, création par défaut");
         const { error: insertError } = await supabase
           .from('user_settings')
           .insert({
@@ -254,15 +333,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
           });
 
         if (insertError) {
+          console.error("Erreur lors de la création des paramètres:", insertError);
           throw new Error('Erreur lors de la création des paramètres: ' + insertError.message);
         }
       }
 
-      const response = await generateResponse(inputValue, {
+      // Générer une réponse via Claude
+      console.log("Génération d'une réponse Claude");
+      const response = await generateResponse(messageToSend, {
         generateAudio: settings?.audio_enabled ?? isAudioEnabled,
         voiceType: settings?.voice_type ?? voiceType,
         phoneNumber
       });
+      
+      console.log("Réponse générée avec succès");
       
       const assistantMessage: Message = {
         id: `msg-${Date.now()}-assistant`,
@@ -278,16 +362,29 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         sentMessagesRef.current.add(assistantMessage.id);
       }
     } catch (error) {
-      console.error('Error in handleSendMessage:', error);
+      console.error('Erreur lors de l\'envoi du message:', error);
       const errorMessage = error instanceof Error ? error.message : 'Une erreur est survenue lors de l\'envoi du message';
       setError(errorMessage);
+      
+      // Retirer le message utilisateur en cas d'erreur pour permettre une nouvelle tentative
       setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
       sentMessagesRef.current.delete(userMessage.id);
+      
+      // Ajouter un message d'erreur
+      const errorResponse: Message = {
+        id: `msg-${Date.now()}-error`,
+        content: "Désolé, une erreur s'est produite. Veuillez réessayer.",
+        timestamp: new Date(),
+        direction: 'incoming'
+      };
+      
+      setMessages(prev => [...prev, errorResponse]);
     } finally {
       setIsLoading(false);
     }
   };
   
+  // Gestion de la touche Entrée
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -308,7 +405,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       
       {error && (
         <Alert variant="error" className="mx-4 mb-4">
-          {error}
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
         </Alert>
       )}
       
