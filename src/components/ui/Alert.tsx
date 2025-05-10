@@ -1,4 +1,3 @@
-// src/components/ui/Alert.tsx
 import React from 'react';
 
 type AlertVariant = 'info' | 'success' | 'warning' | 'error' | 'destructive';
@@ -9,7 +8,7 @@ interface AlertProps {
   className?: string;
 }
 
-const Alert: React.FC<AlertProps> = ({ 
+export const Alert: React.FC<AlertProps> = ({ 
   children, 
   variant = 'info', 
   className = '' 
@@ -31,5 +30,3 @@ const Alert: React.FC<AlertProps> = ({
     </div>
   );
 };
-
-export default Alert;
