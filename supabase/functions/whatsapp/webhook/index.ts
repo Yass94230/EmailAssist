@@ -534,6 +534,41 @@ async function sendWhatsAppMessage(to: string, text: string, audioData?: string)
   }
 }
 
+// Nouvelle fonction pour envoyer l'indicateur "est en train d'écrire"
+async function sendTypingIndicator(to: string) {
+  const twilioAccountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
+  const twilioAuthToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+  const twilioWhatsAppNumber = Deno.env.get("TWILIO_WHATSAPP_NUMBER") || "+14155238886";
+
+  if (!twilioAccountSid || !twilioAuthToken) {
+    throw new Error("Configuration Twilio manquante");
+  }
+
+  try {
+    const formattedTo = to.startsWith('+') ? to : `+${to}`;
+    const formattedFrom = twilioWhatsAppNumber.startsWith('+') ? twilioWhatsAppNumber : `+${twilioWhatsAppNumber}`;
+    
+    const twilioEndpoint = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+    const formData = new URLSearchParams();
+    
+    formData.append('To', `whatsapp:${formattedTo}`);
+    formData.append('From', `whatsapp:${formattedFrom}`);
+    formData.append('Body', "L'assistant est en train d'écrire...");
+
+    await fetch(twilioEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
+      },
+      body: formData.toString(),
+    });
+  } catch (error) {
+    console.error("Erreur lors de l'envoi de l'indicateur de frappe:", error);
+    // On continue même si l'envoi de l'indicateur échoue
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -546,7 +581,6 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     console.log("Requête reçue sur:", url.pathname);
 
-    // Configuration Supabase
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     
@@ -556,29 +590,24 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseKey);
     
-    // Debug: Afficher tous les headers pour vérifier le content-type
     console.log("Headers de la requête:");
     for (const [key, value] of req.headers.entries()) {
       console.log(`${key}: ${value}`);
     }
     
-    // Traitement des webhooks Twilio WhatsApp
     let formData;
     try {
       formData = await req.formData();
-      // Debug: Afficher toutes les clés du formData
       console.log("Clés du formData:");
       for (const key of formData.keys()) {
         console.log(`- ${key}: ${formData.get(key)}`);
       }
     } catch (formError) {
       console.error("Erreur lors de la récupération du formData:", formError);
-      // Essayer de récupérer le corps en tant que JSON
       try {
         const jsonBody = await req.json();
         console.log("Corps JSON reçu:", jsonBody);
         
-        // Créer un formData synthétique à partir du JSON
         formData = new FormData();
         if (jsonBody.From) formData.append('From', jsonBody.From);
         if (jsonBody.Body) formData.append('Body', jsonBody.Body);
@@ -596,7 +625,6 @@ Deno.serve(async (req) => {
     const mediaContentType = formData.get('MediaContentType0') || '';
     const mediaUrl = formData.get('MediaUrl0') || '';
     
-    // Numéro de téléphone de l'expéditeur
     const fromRaw = formData.get('From') || '';
     const from = fromRaw.toString().replace('whatsapp:', '').trim();
     
@@ -611,18 +639,14 @@ Deno.serve(async (req) => {
       mediaUrl: mediaUrl || 'none'
     });
     
-    // Vérifier si la reconnaissance vocale est activée pour cet utilisateur
     const voiceRecognitionEnabled = await isVoiceRecognitionEnabled(from, supabase);
     console.log("Reconnaissance vocale activée:", voiceRecognitionEnabled);
     
-    // Vérifier les préférences audio (réponses audio activées, type de voix)
     const { audioEnabled, voiceType } = await getAudioSettings(from, supabase);
     console.log("Préférences audio:", { audioEnabled, voiceType });
     
     let responseText = '';
     
-    // Traitement d'un message audio - Condition améliorée pour détecter les fichiers audio
-    // Utilisez une approche plus permissive pour la détection audio
     const isAudioMessage = (
       mediaUrl && 
       (
@@ -637,13 +661,15 @@ Deno.serve(async (req) => {
       )
     );
     
+    // Envoyer l'indicateur "est en train d'écrire" avant de commencer le traitement
+    await sendTypingIndicator(from);
+    
     if (isAudioMessage && voiceRecognitionEnabled) {
       try {
         console.log("Transcription d'un message audio:", mediaUrl.toString());
         const transcribedText = await transcribeVoiceMessage(mediaUrl.toString());
         console.log("Transcription réussie:", transcribedText);
         
-        // Obtenir une réponse basée sur la transcription
         const claudeResponse = await getClaudeResponse(
           transcribedText,
           audioEnabled,
@@ -651,7 +677,6 @@ Deno.serve(async (req) => {
         );
         console.log("Réponse Claude générée");
         
-        // Envoyer la réponse (texte et audio si activé)
         await sendWhatsAppMessage(
           from,
           claudeResponse.text,
@@ -663,7 +688,6 @@ Deno.serve(async (req) => {
       } catch (error) {
         console.error("Erreur lors du traitement du message audio:", error);
         
-        // Envoyer un message d'erreur à l'utilisateur
         await sendWhatsAppMessage(
           from,
           "Désolé, je n'ai pas pu traiter votre message vocal. Veuillez réessayer ou envoyer un message texte."
@@ -672,19 +696,16 @@ Deno.serve(async (req) => {
         responseText = "Erreur lors du traitement du message audio";
       }
     } 
-    // Traitement d'un message texte
     else if (messageBody) {
       try {
         console.log("Traitement d'un message texte:", messageBody.toString().substring(0, 50) + '...');
         
-        // Obtenir une réponse à partir du texte
         const claudeResponse = await getClaudeResponse(
           messageBody.toString(),
           audioEnabled,
           voiceType
         );
         
-        // Envoyer la réponse (texte et audio si activé)
         await sendWhatsAppMessage(
           from,
           claudeResponse.text,
@@ -696,7 +717,6 @@ Deno.serve(async (req) => {
       } catch (error) {
         console.error("Erreur lors du traitement du message texte:", error);
         
-        // Envoyer un message d'erreur à l'utilisateur
         await sendWhatsAppMessage(
           from,
           "Désolé, je n'ai pas pu traiter votre message. Veuillez réessayer."
@@ -705,7 +725,6 @@ Deno.serve(async (req) => {
         responseText = "Erreur lors du traitement du message texte";
       }
     } else {
-      // Aucun contenu exploitable
       console.log("Message sans contenu exploitable");
       
       await sendWhatsAppMessage(
