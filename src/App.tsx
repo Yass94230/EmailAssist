@@ -49,7 +49,7 @@ function App() {
             .from('user_settings')
             .select('*')
             .eq('user_id', session.user.id)
-            .single();
+            .maybeSingle();
 
           if (!settings && !settingsError) {
             const phone = session.user.phone || storedNumber;
