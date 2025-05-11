@@ -13,15 +13,29 @@ console.info('WhatsApp Webhook function started');
  * Convertit un ArrayBuffer en chaîne Base64 sans utiliser Buffer.from
  */
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  try {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    
+    // Écrire le contenu binaire en évitant les dépassements de pile
+    // pour les gros fichiers
+    const chunkSize = 1024 * 10; // 10KB par chunk
+    for (let i = 0; i < len; i += chunkSize) {
+      const chunk = bytes.slice(i, Math.min(i + chunkSize, len));
+      for (let j = 0; j < chunk.length; j++) {
+        binary += String.fromCharCode(chunk[j]);
+      }
+    }
+    
+    return btoa(binary);
+  } catch (error) {
+    console.error("Erreur dans arrayBufferToBase64:", error);
+    if (error instanceof RangeError) {
+      console.error("Dépassement de pile, taille du buffer trop importante:", buffer.byteLength);
+    }
+    throw error;
   }
-  
-  return btoa(binary);
 }
 
 /**
@@ -107,7 +121,7 @@ async function getAudioSettings(phoneNumber: string, supabase: any): Promise<{ a
 // Fonction pour transcrire un message vocal avec Claude
 async function transcribeVoiceMessage(mediaUrl: string): Promise<string> {
   try {
-    console.log("Début de la transcription du message vocal");
+    console.log("Début de la transcription du message vocal:", mediaUrl);
     const audioResponse = await fetch(mediaUrl);
     if (!audioResponse.ok) {
       throw new Error(`Impossible de récupérer le fichier audio (${audioResponse.status}): ${audioResponse.statusText}`);
@@ -124,7 +138,22 @@ async function transcribeVoiceMessage(mediaUrl: string): Promise<string> {
 
     // Convertir l'ArrayBuffer en Base64
     const audioBase64 = arrayBufferToBase64(audioBuffer);
-    console.log("Audio converti en Base64, envoi à Claude pour transcription");
+    
+    // Vérifier la taille des données base64 avant l'envoi
+    console.log(`Audio converti en Base64, taille: ${audioBase64.length} caractères`);
+    
+    // Déterminer le type MIME en fonction de l'URL ou du contenu
+    let mediaType = "audio/mp3";
+    if (mediaUrl.includes(".ogg") || mediaUrl.includes(".oga")) {
+      mediaType = "audio/ogg";
+    } else if (mediaUrl.includes(".wav")) {
+      mediaType = "audio/wav";
+    } else if (mediaUrl.includes(".webm")) {
+      mediaType = "audio/webm";
+    }
+    
+    console.log("Type MIME détecté:", mediaType);
+    console.log("Envoi à Claude pour transcription...");
 
     const transcriptionRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -144,7 +173,7 @@ async function transcribeVoiceMessage(mediaUrl: string): Promise<string> {
                 type: "audio",
                 source: {
                   type: "base64",
-                  media_type: "audio/mp3",
+                  media_type: mediaType,
                   data: audioBase64
                 }
               }
@@ -157,10 +186,24 @@ async function transcribeVoiceMessage(mediaUrl: string): Promise<string> {
     if (!transcriptionRes.ok) {
       const errorText = await transcriptionRes.text();
       console.error("Erreur de l'API Claude:", errorText);
-      throw new Error(`Erreur lors de la transcription: ${transcriptionRes.status}`);
+      
+      // Tenter de parser l'erreur pour avoir plus de détails
+      try {
+        const errorData = JSON.parse(errorText);
+        const errorType = errorData.error?.type || "unknown";
+        const errorMessage = errorData.error?.message || "Erreur inconnue";
+        
+        throw new Error(`Erreur de transcription (${errorType}): ${errorMessage}`);
+      } catch (parseError) {
+        throw new Error(`Erreur lors de la transcription: ${transcriptionRes.status} - ${errorText.substring(0, 100)}`);
+      }
     }
 
     const transcriptionData = await transcriptionRes.json();
+    if (!transcriptionData.content || !transcriptionData.content[0]?.text) {
+      throw new Error("Format de réponse de transcription invalide");
+    }
+    
     const transcribedText = transcriptionData.content[0].text;
     console.log("Transcription réussie:", transcribedText);
     
@@ -287,42 +330,44 @@ async function sendWhatsAppMessage(to: string, text: string, audioData?: string)
       // Note: ceci est une simplification, vous devrez adapter selon votre infrastructure réelle
       const audioUrl = 'https://example.com/audio.mp3'; // URL factice pour cet exemple
       formData.append('MediaUrl', audioUrl);
-      
-      console.log("Ajout d'un fichier audio au message WhatsApp");
     }
 
-    const response = await fetch(twilioEndpoint, {
+    const twilioResponse = await fetch(twilioEndpoint, {
       method: "POST",
       headers: {
         "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
       },
-      body: formData
+      body: formData,
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Erreur Twilio: ${errorData.message || response.statusText}`);
+    if (!twilioResponse.ok) {
+      const errorText = await twilioResponse.text();
+      throw new Error(`Erreur Twilio: ${errorText}`);
     }
 
-    const responseData = await response.json();
-    console.log("Message WhatsApp envoyé, SID:", responseData.sid);
+    const data = await twilioResponse.json();
+    console.log("Message WhatsApp envoyé avec succès, SID:", data.sid);
     
-    return responseData;
+    return data;
   } catch (error) {
     console.error("Erreur lors de l'envoi du message WhatsApp:", error);
     throw error;
   }
 }
 
-// Le traitement principal de la requête
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
   }
 
   try {
-    console.log("Réception d'une requête webhook WhatsApp");
-    
+    const url = new URL(req.url);
+    console.log("Requête reçue sur:", url.pathname);
+
+    // Configuration Supabase
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     
@@ -332,94 +377,134 @@ Deno.serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseKey);
     
-    // Analyser les données du formulaire Twilio
+    // Traitement des webhooks Twilio WhatsApp
     const formData = await req.formData();
-    const from = formData.get('From')?.toString();
-    const mediaUrl = formData.get('MediaUrl0')?.toString();
-    const mediaContentType = formData.get('MediaContentType0')?.toString();
-    let messageBody = formData.get('Body')?.toString() || '';
+    const messageBody = formData.get('Body') || '';
+    const mediaContentType = formData.get('MediaContentType0') || '';
+    const mediaUrl = formData.get('MediaUrl0') || '';
+    
+    // Numéro de téléphone de l'expéditeur
+    const from = (formData.get('From') || '')
+      .toString()
+      .replace('whatsapp:', '')
+      .trim();
     
     if (!from) {
-      throw new Error("Expéditeur (From) manquant dans la requête");
+      throw new Error("Numéro d'expéditeur manquant");
     }
     
-    const phoneNumber = from.replace('whatsapp:', '');
-    console.log("Message reçu de:", phoneNumber, {
+    console.log("Message reçu de:", from, {
+      hasBody: !!messageBody,
       hasMedia: !!mediaUrl,
-      mediaType: mediaContentType || 'none',
-      messageLength: messageBody.length
+      mediaType: mediaContentType || 'none'
     });
     
-    // Vérifier les paramètres audio de l'utilisateur
-    const voiceRecognitionEnabled = await isVoiceRecognitionEnabled(phoneNumber, supabase);
-    const { audioEnabled, voiceType } = await getAudioSettings(phoneNumber, supabase);
+    // Vérifier si la reconnaissance vocale est activée pour cet utilisateur
+    const voiceRecognitionEnabled = await isVoiceRecognitionEnabled(from, supabase);
     
-    console.log("Paramètres utilisateur:", {
-      voiceRecognitionEnabled,
-      audioEnabled,
-      voiceType
-    });
+    // Vérifier les préférences audio (réponses audio activées, type de voix)
+    const { audioEnabled, voiceType } = await getAudioSettings(from, supabase);
     
-    // Transcription si message vocal et si la reconnaissance vocale est activée
-    if (mediaUrl && mediaContentType?.startsWith('audio/') && voiceRecognitionEnabled) {
+    let responseText = '';
+    
+    // Traitement d'un message audio
+    if (mediaUrl && mediaContentType?.toString().includes('audio') && voiceRecognitionEnabled) {
       try {
-        console.log("Transcription du message vocal...");
-        messageBody = await transcribeVoiceMessage(mediaUrl);
-        console.log("Message vocal transcrit:", messageBody);
-      } catch (error) {
-        console.error('Erreur lors de la transcription:', error);
-        return new Response(
-          JSON.stringify({ 
-            error: "Erreur lors de la transcription du message vocal",
-            details: error instanceof Error ? error.message : String(error)
-          }),
-          {
-            status: 500,
-            headers: { "Content-Type": "application/json", ...corsHeaders },
-          }
+        console.log("Transcription d'un message audio...");
+        const transcribedText = await transcribeVoiceMessage(mediaUrl.toString());
+        
+        // Obtenir une réponse basée sur la transcription
+        const claudeResponse = await getClaudeResponse(
+          transcribedText,
+          audioEnabled,
+          voiceType
         );
+        
+        // Envoyer la réponse (texte et audio si activé)
+        await sendWhatsAppMessage(
+          from,
+          claudeResponse.text,
+          claudeResponse.audio
+        );
+        
+        responseText = "Message audio traité avec succès";
+        
+      } catch (error) {
+        console.error("Erreur lors du traitement du message audio:", error);
+        
+        // Envoyer un message d'erreur à l'utilisateur
+        await sendWhatsAppMessage(
+          from,
+          "Désolé, je n'ai pas pu traiter votre message vocal. Veuillez réessayer ou envoyer un message texte."
+        );
+        
+        responseText = "Erreur lors du traitement du message audio";
       }
-    }
-    
-    if (!messageBody) {
-      console.log("Aucun message à traiter");
-      return new Response(
-        JSON.stringify({ 
-          message: "Aucun message à traiter" 
-        }),
-        {
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        }
+    } 
+    // Traitement d'un message texte
+    else if (messageBody) {
+      try {
+        console.log("Traitement d'un message texte:", messageBody.toString().substring(0, 50) + '...');
+        
+        // Obtenir une réponse à partir du texte
+        const claudeResponse = await getClaudeResponse(
+          messageBody.toString(),
+          audioEnabled,
+          voiceType
+        );
+        
+        // Envoyer la réponse (texte et audio si activé)
+        await sendWhatsAppMessage(
+          from,
+          claudeResponse.text,
+          claudeResponse.audio
+        );
+        
+        responseText = "Message texte traité avec succès";
+        
+      } catch (error) {
+        console.error("Erreur lors du traitement du message texte:", error);
+        
+        // Envoyer un message d'erreur à l'utilisateur
+        await sendWhatsAppMessage(
+          from,
+          "Désolé, je n'ai pas pu traiter votre message. Veuillez réessayer."
+        );
+        
+        responseText = "Erreur lors du traitement du message texte";
+      }
+    } else {
+      // Aucun contenu exploitable
+      console.log("Message sans contenu exploitable");
+      
+      await sendWhatsAppMessage(
+        from,
+        "Désolé, je n'ai reçu aucun contenu exploitable. Veuillez envoyer un message texte ou vocal."
       );
+      
+      responseText = "Message sans contenu exploitable";
     }
-    
-    // Générer la réponse avec Claude
-    console.log("Génération de la réponse Claude...");
-    const claudeResponse = await getClaudeResponse(messageBody, audioEnabled, voiceType);
-    
-    // Envoyer la réponse à l'utilisateur
-    await sendWhatsAppMessage(phoneNumber, claudeResponse.text, claudeResponse.audio);
     
     return new Response(
-      JSON.stringify({ 
-        success: true,
-        message: "Message traité et réponse envoyée",
-        hasAudio: !!claudeResponse.audio
-      }),
+      `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`,
       {
-        headers: { "Content-Type": "application/json", ...corsHeaders },
+        headers: {
+          "Content-Type": "text/xml",
+          ...corsHeaders,
+        },
       }
     );
   } catch (error) {
-    console.error("Erreur webhook:", error);
+    console.error("Erreur de traitement du webhook:", error);
+    
     return new Response(
-      JSON.stringify({ 
-        error: "Erreur serveur", 
-        details: error instanceof Error ? error.message : String(error) 
-      }),
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Message>Une erreur est survenue</Message></Response>`,
       {
         status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
+        headers: {
+          "Content-Type": "text/xml",
+          ...corsHeaders,
+        },
       }
     );
   }
