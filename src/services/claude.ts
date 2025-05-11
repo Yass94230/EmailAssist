@@ -13,12 +13,21 @@ interface GenerateResponseResult {
   audioUrl?: string;
 }
 
+// Validation de la taille maximale des données audio (10MB en base64)
+const MAX_AUDIO_SIZE = 10 * 1024 * 1024;
+
+// Validation du format des données audio
+function isValidAudioData(data: string): boolean {
+  // Vérifie si c'est une chaîne base64 valide
+  const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+  return base64Regex.test(data);
+}
+
 export async function generateResponse(
   prompt: string,
   options: GenerateResponseOptions
 ): Promise<GenerateResponseResult> {
   try {
-    // Ajout de logs pour le débogage
     console.log("Envoi de la requête à l'API Claude avec les options :", {
       longueurPrompt: prompt.length,
       estEntréeAudio: options.isAudioInput,
@@ -28,19 +37,27 @@ export async function generateResponse(
       phoneNumber: options.phoneNumber ? options.phoneNumber.substring(0, 4) + '****' : 'non défini'
     });
 
-    // Validation des données avant l'envoi
-    if (options.isAudioInput && (!options.audioData || options.audioData.length < 100)) {
-      throw new Error("Les données audio sont invalides ou trop courtes");
+    // Validation améliorée des données audio
+    if (options.isAudioInput) {
+      if (!options.audioData) {
+        throw new Error("Les données audio sont requises pour le traitement audio");
+      }
+
+      if (options.audioData.length > MAX_AUDIO_SIZE) {
+        throw new Error("Le fichier audio est trop volumineux (maximum 10MB)");
+      }
+
+      if (!isValidAudioData(options.audioData)) {
+        throw new Error("Format des données audio invalide");
+      }
     }
 
-    // Préparation du corps de la requête
     const corpsRequête = {
       prompt,
       phoneNumber: options.phoneNumber,
       generateAudio: options.generateAudio || false,
       voiceType: options.voiceType || 'alloy',
       isAudioInput: options.isAudioInput || false,
-      // S'assurer que les données audio sont correctement formatées
       audioData: options.audioData ? options.audioData.trim() : undefined
     };
 
@@ -60,14 +77,12 @@ export async function generateResponse(
       body: JSON.stringify(corpsRequête)
     });
 
-    // Gestion améliorée des erreurs pour les réponses non-200
     if (!response.ok) {
       const texteErreur = await response.text();
       let donnéesErreur;
       try {
         donnéesErreur = JSON.parse(texteErreur);
       } catch (e) {
-        // Si ce n'est pas un JSON valide, utiliser le texte brut
         donnéesErreur = { error: texteErreur };
       }
       
@@ -77,15 +92,26 @@ export async function generateResponse(
         donnéesErreur
       });
       
-      throw new Error(
-        donnéesErreur?.error || donnéesErreur?.details || 
-        `Erreur ${response.status}: ${response.statusText}`
-      );
+      // Messages d'erreur plus spécifiques basés sur le code de statut
+      switch (response.status) {
+        case 400:
+          throw new Error("Format de données audio non valide ou corrompu");
+        case 413:
+          throw new Error("Fichier audio trop volumineux");
+        case 429:
+          throw new Error("Trop de requêtes. Veuillez réessayer dans quelques instants");
+        case 500:
+          throw new Error("Erreur du serveur lors du traitement audio. Veuillez réessayer");
+        default:
+          throw new Error(
+            donnéesErreur?.error || donnéesErreur?.details || 
+            `Erreur ${response.status}: ${response.statusText}`
+          );
+      }
     }
 
     const données = await response.json();
     
-    // Vérification de la structure de la réponse
     if (!données || typeof données.response !== 'string') {
       console.error("Structure de réponse invalide:", données);
       throw new Error("Réponse invalide du serveur");
@@ -98,16 +124,17 @@ export async function generateResponse(
   } catch (error) {
     console.error('Erreur détaillée dans generateResponse:', error);
     
-    // Amélioration du message d'erreur
     let messageErreur = "Une erreur est survenue lors de la génération de la réponse";
     
     if (error instanceof Error) {
-      if (error.message.includes("413") || error.message.includes("too large")) {
+      if (error.message.includes("413") || error.message.includes("trop volumineux")) {
         messageErreur = "Le message audio est trop volumineux. Veuillez enregistrer un message plus court.";
-      } else if (error.message.includes("429") || error.message.includes("too many requests")) {
+      } else if (error.message.includes("429") || error.message.includes("trop de requêtes")) {
         messageErreur = "Trop de requêtes. Veuillez réessayer dans quelques instants.";
-      } else if (error.message.includes("401") || error.message.includes("403") || error.message.includes("unauthorized")) {
+      } else if (error.message.includes("401") || error.message.includes("403")) {
         messageErreur = "Problème d'authentification avec le service Claude. Veuillez vous reconnecter.";
+      } else if (error.message.includes("Format") || error.message.includes("corrompu")) {
+        messageErreur = "Le format audio n'est pas valide. Veuillez réessayer avec un autre enregistrement.";
       } else {
         messageErreur = error.message;
       }

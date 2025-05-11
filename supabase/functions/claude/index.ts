@@ -12,8 +12,33 @@ Tu communiques exclusivement en français.
 Pour la connexion email, tu dois TOUJOURS utiliser le lien unique généré.
 Tu ne dois JAMAIS mentionner d'URL générique ou demander à l'utilisateur d'aller sur une interface web.`;
 
+// Validation des données audio
+function validateAudioData(audioData: string): boolean {
+  if (!audioData) return false;
+  // Vérifie si c'est une chaîne base64 valide
+  const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+  return base64Regex.test(audioData);
+}
+
+// Gestion des erreurs de l'API Claude
+async function handleClaudeError(response: Response): Promise<never> {
+  const errorText = await response.text();
+  let errorDetails;
+  try {
+    errorDetails = JSON.parse(errorText);
+  } catch {
+    errorDetails = { error: errorText };
+  }
+
+  console.error("Erreur API Claude:", {
+    status: response.status,
+    details: errorDetails
+  });
+
+  throw new Error(`Erreur API Claude: ${response.status} - ${errorDetails.error || errorText}`);
+}
+
 serve(async (req) => {
-  // Gestion des requêtes OPTIONS (CORS)
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
@@ -22,7 +47,6 @@ serve(async (req) => {
   }
 
   try {
-    // Récupération et validation des données de la requête
     let requestData;
     try {
       requestData = await req.json();
@@ -36,20 +60,41 @@ serve(async (req) => {
       });
     } catch (parseError) {
       console.error("Erreur lors du parsing JSON:", parseError);
-      throw new Error("Format de requête invalide");
+      return new Response(
+        JSON.stringify({ error: "Format de requête invalide" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
     }
     
     const { prompt, phoneNumber, generateAudio = true, isAudioInput = false, audioData, voiceType = 'alloy' } = requestData;
     
-    // Validation des paramètres
-    if (isAudioInput && !audioData) {
-      throw new Error("Les données audio sont requises pour le traitement audio");
+    if (isAudioInput) {
+      if (!audioData) {
+        return new Response(
+          JSON.stringify({ error: "Les données audio sont requises" }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json", ...corsHeaders },
+          }
+        );
+      }
+
+      if (!validateAudioData(audioData)) {
+        return new Response(
+          JSON.stringify({ error: "Format de données audio invalide" }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json", ...corsHeaders },
+          }
+        );
+      }
     }
 
-    // Si l'utilisateur demande de connecter son email
-    if (prompt && prompt.toLowerCase().includes('connecter email')) {
+    if (prompt?.toLowerCase().includes('connecter email')) {
       try {
-        // Générer un lien unique
         const connectResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/email-connect`, {
           method: 'POST',
           headers: {
@@ -60,10 +105,6 @@ serve(async (req) => {
         });
 
         if (!connectResponse.ok) {
-          console.error("Erreur lors de la génération du lien:", {
-            status: connectResponse.status,
-            statusText: connectResponse.statusText
-          });
           throw new Error("Erreur lors de la génération du lien de connexion");
         }
 
@@ -83,26 +124,17 @@ serve(async (req) => {
       }
     }
 
-    // Vérification de la clé API Claude
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) {
-      console.error("Clé API Claude manquante dans les variables d'environnement");
       throw new Error("Configuration de l'API Claude manquante");
     }
 
     let textResponse = "";
     
-    // Traitement audio si demandé
     if (isAudioInput && audioData) {
       try {
         console.log("Traitement de l'entrée audio...");
         
-        // Validation du format des données audio
-        if (!audioData.match(/^[A-Za-z0-9+/=]+$/)) {
-          throw new Error("Format de données audio invalide");
-        }
-        
-        // Appel à l'API Claude pour le traitement audio
         const audioProcessingRes = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
@@ -132,20 +164,30 @@ serve(async (req) => {
         });
         
         if (!audioProcessingRes.ok) {
-          const errorText = await audioProcessingRes.text();
-          console.error("Erreur API Claude (traitement audio):", errorText);
-          throw new Error(`Erreur lors du traitement audio: ${audioProcessingRes.status}`);
+          await handleClaudeError(audioProcessingRes);
         }
         
         const audioProcessingData = await audioProcessingRes.json();
+        if (!audioProcessingData.content?.[0]?.text) {
+          throw new Error("Format de réponse audio invalide");
+        }
+        
         textResponse = audioProcessingData.content[0].text;
         console.log("Transcription audio réussie:", textResponse.substring(0, 100) + '...');
       } catch (audioError) {
         console.error("Erreur détaillée lors du traitement audio:", audioError);
-        throw new Error(`Erreur lors du traitement audio: ${audioError instanceof Error ? audioError.message : String(audioError)}`);
+        return new Response(
+          JSON.stringify({ 
+            error: "Erreur lors du traitement audio",
+            details: audioError instanceof Error ? audioError.message : String(audioError)
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json", ...corsHeaders },
+          }
+        );
       }
     } else {
-      // Traitement texte classique avec l'API Claude
       try {
         console.log("Traitement de l'entrée texte...");
         const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -165,15 +207,12 @@ serve(async (req) => {
         });
 
         if (!anthropicRes.ok) {
-          const errorText = await anthropicRes.text();
-          console.error("Erreur API Claude (traitement texte):", errorText);
-          throw new Error(`Erreur API Claude: ${errorText}`);
+          await handleClaudeError(anthropicRes);
         }
 
         const data = await anthropicRes.json();
         
         if (!data.content || !Array.isArray(data.content) || !data.content[0]?.text) {
-          console.error("Format de réponse invalide:", data);
           throw new Error("Format de réponse invalide");
         }
 
@@ -185,7 +224,6 @@ serve(async (req) => {
       }
     }
 
-    // Générer l'audio si demandé
     let audioResponse;
     if (generateAudio && textResponse) {
       try {
@@ -210,8 +248,6 @@ serve(async (req) => {
             status: speechRes.status,
             statusText: speechRes.statusText
           });
-          // Ne pas échouer complètement, juste renvoyer la réponse texte sans audio
-          console.log("Envoi de la réponse texte sans audio");
         } else {
           const audioBuffer = await speechRes.arrayBuffer();
           audioResponse = btoa(String.fromCharCode(...new Uint8Array(audioBuffer)));
@@ -219,8 +255,6 @@ serve(async (req) => {
         }
       } catch (audioGenError) {
         console.error("Erreur lors de la génération audio:", audioGenError);
-        // Ne pas échouer complètement, juste renvoyer la réponse texte sans audio
-        console.log("Envoi de la réponse texte sans audio après erreur de génération");
       }
     }
 
