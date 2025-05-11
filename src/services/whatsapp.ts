@@ -5,7 +5,6 @@ interface SendMessageParams {
   message: string;
 }
 
-// Type de réponse
 interface SendMessageResponse {
   success: boolean;
   message: string;
@@ -13,6 +12,26 @@ interface SendMessageResponse {
   error?: string;
   details?: string;
 }
+
+/**
+ * Implements exponential backoff retry logic
+ */
+const retry = async <T>(
+  fn: () => Promise<T>,
+  retries = 3,
+  delay = 1000,
+  backoff = 2
+): Promise<T> => {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries === 0) {
+      throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return retry(fn, retries - 1, delay * backoff, backoff);
+  }
+};
 
 /**
  * Envoie un message WhatsApp via la fonction Supabase
@@ -32,68 +51,110 @@ export const sendMessage = async ({ to, message }: SendMessageParams): Promise<S
     // URL de la fonction Supabase
     const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp`;
     
-    // Requête avec retry et timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-    
-    try {
-      const response = await fetch(functionUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
-        body: JSON.stringify({ to: formattedTo, message }),
-        signal: controller.signal
-      });
+    // Implémentation de la logique de retry avec exponential backoff
+    return await retry(async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
       
-      clearTimeout(timeoutId);
-      
-      // Récupérer la réponse complète pour le débogage
-      const responseText = await response.text();
-      console.log(`Réponse de la fonction Supabase: ${response.status}`, responseText.substring(0, 200));
-      
-      // Parser le JSON uniquement si c'est possible
-      let data;
       try {
-        data = JSON.parse(responseText);
-      } catch (e) {
-        console.error("Erreur de parsing JSON:", e);
-        // Si la réponse n'est pas un JSON valide, créer un objet avec les informations disponibles
-        data = { 
-          success: false, 
-          error: "Réponse invalide du serveur", 
-          details: responseText.substring(0, 500) 
+        const response = await fetch(functionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ to: formattedTo, message }),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        // Récupérer la réponse complète pour le débogage
+        const responseText = await response.text();
+        console.log(`Réponse de la fonction Supabase: ${response.status}`, {
+          statusText: response.statusText,
+          responsePreview: responseText.substring(0, 200)
+        });
+        
+        // Parser le JSON uniquement si c'est possible
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (e) {
+          console.error("Erreur de parsing JSON:", e);
+          throw new Error(`Réponse invalide du serveur: ${responseText.substring(0, 500)}`);
+        }
+        
+        if (!response.ok) {
+          // Extraction des détails d'erreur spécifiques
+          const errorDetails = data.error || data.details || responseText;
+          const statusCode = response.status;
+          
+          // Gestion des erreurs spécifiques
+          if (statusCode === 429) {
+            throw new Error("Limite de requêtes atteinte. Veuillez réessayer dans quelques minutes.");
+          } else if (statusCode === 401 || statusCode === 403) {
+            throw new Error("Erreur d'authentification. Veuillez vous reconnecter.");
+          } else if (statusCode >= 500) {
+            throw new Error("Le service WhatsApp est temporairement indisponible. Veuillez réessayer plus tard.");
+          }
+          
+          throw new Error(`Erreur API (${statusCode}): ${errorDetails}`);
+        }
+        
+        // Vérification de la structure de la réponse
+        if (!data || typeof data !== 'object') {
+          throw new Error("Format de réponse invalide");
+        }
+        
+        return {
+          success: true,
+          message: data.message || "Message envoyé avec succès",
+          sid: data.data?.messages?.[0]?.id
         };
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        
+        if (fetchError.name === 'AbortError') {
+          throw new Error("La requête a expiré. Vérifiez votre connexion internet.");
+        }
+        
+        // Enrichissement des messages d'erreur
+        const errorMessage = fetchError instanceof Error ? fetchError.message : "Erreur inconnue";
+        console.error("Erreur détaillée:", {
+          error: fetchError,
+          message: errorMessage,
+          timestamp: new Date().toISOString()
+        });
+        
+        throw new Error(`Échec de l'envoi: ${errorMessage}`);
       }
-      
-      if (!response.ok) {
-        throw new Error(`Erreur API (${response.status}): ${data.error || data.details || responseText}`);
-      }
-      
-      return {
-        success: true,
-        message: data.message || "Message envoyé avec succès",
-        sid: data.data?.messages?.[0]?.id
-      };
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-      
-      // Gestion spécifique des erreurs d'abort
-      if (fetchError.name === 'AbortError') {
-        throw new Error("La requête a expiré après 30 secondes. Vérifiez votre connexion ou contactez le support.");
-      }
-      
-      // Relance des autres erreurs
-      throw fetchError;
-    }
+    }, 3, 1000, 2); // 3 tentatives, délai initial de 1s, multiplicateur de 2
+    
   } catch (error) {
-    console.error("Error in sendMessage:", error);
+    console.error("Error in sendMessage:", {
+      error,
+      timestamp: new Date().toISOString(),
+      context: { to, messageLength: message?.length }
+    });
+    
+    // Construction d'un message d'erreur utilisateur plus informatif
+    let userMessage = "Échec de l'envoi du message";
+    let errorDetails = error instanceof Error ? error.message : "Erreur inconnue";
+    
+    if (errorDetails.includes("temporairement indisponible")) {
+      userMessage = "Le service WhatsApp est momentanément indisponible. Veuillez réessayer dans quelques minutes.";
+    } else if (errorDetails.includes("limite de requêtes")) {
+      userMessage = "Trop de messages envoyés. Veuillez patienter quelques minutes avant de réessayer.";
+    } else if (errorDetails.includes("authentification")) {
+      userMessage = "Votre session a expiré. Veuillez vous reconnecter.";
+    }
     
     return {
       success: false,
-      message: "Échec de l'envoi du message",
-      error: error instanceof Error ? error.message : "Erreur inconnue"
+      message: userMessage,
+      error: errorDetails,
+      details: error instanceof Error ? error.stack : undefined
     };
   }
 };
