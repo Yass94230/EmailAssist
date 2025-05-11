@@ -227,6 +227,32 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       setIsRecording(false);
     }
   };
+
+  // Fonction pour déterminer le type MIME à partir d'un blob audio
+  const getAudioMimeType = async (audioBlob: Blob): Promise<string> => {
+    return new Promise((resolve) => {
+      // Essayer de lire les premiers octets pour détecter le format
+      const fileReader = new FileReader();
+      fileReader.onloadend = () => {
+        const arr = new Uint8Array(fileReader.result as ArrayBuffer).subarray(0, 4);
+        let header = '';
+        for (let i = 0; i < arr.length; i++) {
+          header += arr[i].toString(16);
+        }
+        
+        // Détection des formats courants basée sur la signature d'en-tête
+        if (header.startsWith('4f676753')) return resolve('audio/ogg'); // OggS
+        if (header.startsWith('1a45dfa3')) return resolve('audio/webm'); // WebM
+        if (header.startsWith('fffb') || header.startsWith('494433')) return resolve('audio/mpeg'); // MP3
+        if (header.startsWith('52494646')) return resolve('audio/wav'); // RIFF (WAV)
+        
+        // Par défaut, utiliser le type original du blob ou une estimation
+        resolve(audioBlob.type || 'audio/webm');
+      };
+      
+      fileReader.readAsArrayBuffer(audioBlob.slice(0, 4));
+    });
+  };
   
   // Traitement d'un message audio
   const handleAudioInput = async (audioBase64: string, messageId: string) => {
@@ -258,14 +284,27 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         throw new Error("La reconnaissance vocale est désactivée dans vos paramètres");
       }
 
-      // Tentative de traitement audio
+      // Créer un Blob à partir des données base64 pour déterminer le type MIME
       try {
+        const binaryStr = atob(audioBase64);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        const audioBlob = new Blob([bytes], { type: 'audio/webm' });
+        
+        // Détecter le type MIME
+        const mimeType = await getAudioMimeType(audioBlob);
+        console.log("Type MIME détecté:", mimeType);
+        
+        // Tentative de traitement audio avec le type MIME détecté
         const response = await generateResponse("", {
           generateAudio: isAudioEnabled,
           voiceType,
           phoneNumber,
           isAudioInput: true,
-          audioData: audioBase64
+          audioData: audioBase64,
+          mimeType: mimeType  // Ajouter le type MIME détecté
         });
         
         if (!response || (!response.text && !response.audioUrl)) {
@@ -641,401 +680,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       </div>
     </div>
   );
-};
-
-// Ajoutez cette fonction dans votre composant ChatInterface:
-
-// Fonction pour déterminer le type MIME à partir d'un blob audio
-const getAudioMimeType = async (audioBlob: Blob): Promise<string> => {
-  return new Promise((resolve) => {
-    // Essayer de lire les premiers octets pour détecter le format
-    const fileReader = new FileReader();
-    fileReader.onloadend = () => {
-      const arr = new Uint8Array(fileReader.result as ArrayBuffer).subarray(0, 4);
-      let header = '';
-      for (let i = 0; i < arr.length; i++) {
-        header += arr[i].toString(16);
-      }
-      
-      // Détection des formats courants basée sur la signature d'en-tête
-      if (header.startsWith('4f676753')) return resolve('audio/ogg'); // OggS
-      if (header.startsWith('1a45dfa3')) return resolve('audio/webm'); // WebM
-      if (header.startsWith('fffb') || header.startsWith('494433')) return resolve('audio/mpeg'); // MP3
-      if (header.startsWith('52494646')) return resolve('audio/wav'); // RIFF (WAV)
-      
-      // Par défaut, utiliser le type original du blob ou une estimation
-      resolve(audioBlob.type || 'audio/webm');
-    };
-    
-    fileReader.readAsArrayBuffer(audioBlob.slice(0, 4));
-  });
-};
-
-// Modifiez la fonction handleAudioInput pour utiliser getAudioMimeType:
-// Remplacez la partie correspondante par ce code:
-
-const handleAudioInput = async (audioBase64: string, messageId: string) => {
-  if (isLoading || !session) {
-    console.log("Impossible de traiter l'audio:", { isLoading, hasSession: !!session });
-    return;
-  }
-  
-  setError(null);
-  setIsLoading(true);
-  
-  try {
-    // Validation des données audio
-    if (!audioBase64) {
-      throw new Error("Données audio manquantes");
-    }
-    
-    if (audioBase64.length < 100) {
-      throw new Error("Enregistrement audio trop court ou incomplet");
-    }
-    
-    console.log("Traitement du message audio...", {
-      taille: audioBase64.length,
-      debut: audioBase64.substring(0, 20) + '...'
-    });
-
-    // Vérification si la reconnaissance vocale est activée
-    if (!isVoiceRecognitionEnabled) {
-      throw new Error("La reconnaissance vocale est désactivée dans vos paramètres");
-    }
-
-    // Créer un Blob à partir des données base64 pour déterminer le type MIME
-    try {
-      const binaryStr = atob(audioBase64);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-      const audioBlob = new Blob([bytes], { type: 'audio/webm' });
-      
-      // Détecter le type MIME
-      const mimeType = await getAudioMimeType(audioBlob);
-      console.log("Type MIME détecté:", mimeType);
-      
-      // Tentative de traitement audio avec le type MIME détecté
-      const response = await generateResponse("", {
-        generateAudio: isAudioEnabled,
-        voiceType,
-        phoneNumber,
-        isAudioInput: true,
-        audioData: audioBase64,
-        mimeType: mimeType  // Ajouter le type MIME détecté
-      });
-      
-      if (!response || (!response.text && !response.audioUrl)) {
-        throw new Error("Réponse invalide du serveur");
-      }
-      
-      console.log("Réponse audio générée avec succès");
-      
-      // Mise à jour du message d'envoi
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === messageId 
-            ? { ...msg, content: "Message vocal envoyé", transcription: response.text }
-            : msg
-        )
-      );
-      
-      // Création du message de réponse
-      const assistantMessage: Message = {
-        id: `msg-${Date.now()}-assistant`,
-        content: response.text,
-        timestamp: new Date(),
-        direction: 'incoming',
-        audioUrl: response.audioUrl
-      };
-      
-      if (!sentMessagesRef.current.has(assistantMessage.id)) {
-        setMessages(prev => [...prev, assistantMessage]);
-        await sendMessageToCurrentUser(response.text);
-        sentMessagesRef.current.add(assistantMessage.id);
-      }
-    } catch (audioProcessingError) {
-      console.error("Erreur lors du traitement audio, tentative de repli texte:", audioProcessingError);
-      
-      // Mise à jour du message utilisateur pour indiquer le problème
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === messageId 
-            ? { ...msg, content: "Message vocal (traitement de secours)" }
-            : msg
-        )
-      );
-      
-      // Tentative de traitement texte sans audio
-      const fallbackResponse = await generateResponse(
-        "L'utilisateur a envoyé un message vocal qui n'a pas pu être traité. Merci de lui demander de réessayer ou d'envoyer un message texte.", 
-        {
-          generateAudio: false,
-          phoneNumber,
-          isAudioInput: false
-        }
-      );
-      
-      const fallbackMessage: Message = {
-        id: `msg-${Date.now()}-assistant-fallback`,
-        content: fallbackResponse.text,
-        timestamp: new Date(),
-        direction: 'incoming'
-      };
-      
-      if (!sentMessagesRef.current.has(fallbackMessage.id)) {
-        setMessages(prev => [...prev, fallbackMessage]);
-        await sendMessageToCurrentUser(fallbackResponse.text);
-        sentMessagesRef.current.add(fallbackMessage.id);
-      }
-    }
-  } catch (error) {
-    console.error('Erreur lors du traitement du message audio:', error);
-    
-    // Amélioration du message d'erreur
-    let errorMessage = "Une erreur est survenue lors du traitement du message audio";
-    
-    if (error instanceof Error) {
-      if (error.message.includes("reconnaissance vocale est désactivée")) {
-        errorMessage = "La reconnaissance vocale est désactivée dans vos paramètres. Veuillez l'activer dans les réglages ou envoyer un message texte.";
-      } else if (error.message.includes("trop court")) {
-        errorMessage = "L'enregistrement audio est trop court. Veuillez parler plus longtemps.";
-      } else if (error.message.includes("trop volumineux")) {
-        errorMessage = "L'enregistrement audio est trop long. Veuillez enregistrer un message plus court.";
-      } else if (error.message.includes("invalide") || error.message.includes("incomplet")) {
-        errorMessage = "Format audio non reconnu. Veuillez réessayer.";
-      } else {
-        errorMessage = error.message;
-      }
-    }
-    
-    setError(errorMessage);
-    
-    // Mise à jour du message utilisateur pour indiquer l'erreur
-    setMessages(prev => 
-      prev.map(msg => 
-        msg.id === messageId 
-          ? { ...msg, content: "Erreur: " + errorMessage }
-          : msg
-      )
-    );
-    
-    // Message d'erreur de l'assistant
-    const errorResponse: Message = {
-      id: `msg-${Date.now()}-error`,
-      content: `Désolé, une erreur s'est produite: ${errorMessage}`,
-      timestamp: new Date(),
-      direction: 'incoming'
-    };
-    
-    if (!sentMessagesRef.current.has(errorResponse.id)) {
-      setMessages(prev => [...prev, errorResponse]);
-      await sendMessageToCurrentUser(errorResponse.content).catch(err => {
-        console.error("Erreur lors de l'envoi du message d'erreur:", err);
-      });
-      sentMessagesRef.current.add(errorResponse.id);
-    }
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-// 1. Ajoutez cette fonction dans votre composant (généralement avec les autres fonctions utilitaires)
-
-// Fonction pour déterminer le type MIME à partir d'un blob audio
-const getAudioMimeType = async (audioBlob: Blob): Promise<string> => {
-  return new Promise((resolve) => {
-    // Essayer de lire les premiers octets pour détecter le format
-    const fileReader = new FileReader();
-    fileReader.onloadend = () => {
-      const arr = new Uint8Array(fileReader.result as ArrayBuffer).subarray(0, 4);
-      let header = '';
-      for (let i = 0; i < arr.length; i++) {
-        header += arr[i].toString(16);
-      }
-      
-      // Détection des formats courants basée sur la signature d'en-tête
-      if (header.startsWith('4f676753')) return resolve('audio/ogg'); // OggS
-      if (header.startsWith('1a45dfa3')) return resolve('audio/webm'); // WebM
-      if (header.startsWith('fffb') || header.startsWith('494433')) return resolve('audio/mpeg'); // MP3
-      if (header.startsWith('52494646')) return resolve('audio/wav'); // RIFF (WAV)
-      
-      // Par défaut, utiliser le type original du blob ou une estimation
-      resolve(audioBlob.type || 'audio/webm');
-    };
-    
-    fileReader.readAsArrayBuffer(audioBlob.slice(0, 4));
-  });
-};
-
-// 2. Remplacez votre fonction handleAudioInput existante par celle-ci:
-
-const handleAudioInput = async (audioBase64: string, messageId: string) => {
-  if (isLoading || !session) {
-    console.log("Impossible de traiter l'audio:", { isLoading, hasSession: !!session });
-    return;
-  }
-  
-  setError(null);
-  setIsLoading(true);
-  
-  try {
-    // Validation des données audio
-    if (!audioBase64) {
-      throw new Error("Données audio manquantes");
-    }
-    
-    if (audioBase64.length < 100) {
-      throw new Error("Enregistrement audio trop court ou incomplet");
-    }
-    
-    console.log("Traitement du message audio...", {
-      taille: audioBase64.length,
-      debut: audioBase64.substring(0, 20) + '...'
-    });
-
-    // Vérification si la reconnaissance vocale est activée
-    if (!isVoiceRecognitionEnabled) {
-      throw new Error("La reconnaissance vocale est désactivée dans vos paramètres");
-    }
-
-    // Créer un Blob à partir des données base64 pour déterminer le type MIME
-    try {
-      const binaryStr = atob(audioBase64);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-      const audioBlob = new Blob([bytes], { type: 'audio/webm' });
-      
-      // Détecter le type MIME
-      const mimeType = await getAudioMimeType(audioBlob);
-      console.log("Type MIME détecté:", mimeType);
-      
-      // Tentative de traitement audio avec le type MIME détecté
-      const response = await generateResponse("", {
-        generateAudio: isAudioEnabled,
-        voiceType,
-        phoneNumber,
-        isAudioInput: true,
-        audioData: audioBase64,
-        mimeType: mimeType  // Ajouter le type MIME détecté
-      });
-      
-      if (!response || (!response.text && !response.audioUrl)) {
-        throw new Error("Réponse invalide du serveur");
-      }
-      
-      console.log("Réponse audio générée avec succès");
-      
-      // Mise à jour du message d'envoi
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === messageId 
-            ? { ...msg, content: "Message vocal envoyé", transcription: response.text }
-            : msg
-        )
-      );
-      
-      // Création du message de réponse
-      const assistantMessage: Message = {
-        id: `msg-${Date.now()}-assistant`,
-        content: response.text,
-        timestamp: new Date(),
-        direction: 'incoming',
-        audioUrl: response.audioUrl
-      };
-      
-      if (!sentMessagesRef.current.has(assistantMessage.id)) {
-        setMessages(prev => [...prev, assistantMessage]);
-        await sendMessageToCurrentUser(response.text);
-        sentMessagesRef.current.add(assistantMessage.id);
-      }
-    } catch (audioProcessingError) {
-      console.error("Erreur lors du traitement audio, tentative de repli texte:", audioProcessingError);
-      
-      // Mise à jour du message utilisateur pour indiquer le problème
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === messageId 
-            ? { ...msg, content: "Message vocal (traitement de secours)" }
-            : msg
-        )
-      );
-      
-      // Tentative de traitement texte sans audio
-      const fallbackResponse = await generateResponse(
-        "L'utilisateur a envoyé un message vocal qui n'a pas pu être traité. Merci de lui demander de réessayer ou d'envoyer un message texte.", 
-        {
-          generateAudio: false,
-          phoneNumber,
-          isAudioInput: false
-        }
-      );
-      
-      const fallbackMessage: Message = {
-        id: `msg-${Date.now()}-assistant-fallback`,
-        content: fallbackResponse.text,
-        timestamp: new Date(),
-        direction: 'incoming'
-      };
-      
-      if (!sentMessagesRef.current.has(fallbackMessage.id)) {
-        setMessages(prev => [...prev, fallbackMessage]);
-        await sendMessageToCurrentUser(fallbackResponse.text);
-        sentMessagesRef.current.add(fallbackMessage.id);
-      }
-    }
-  } catch (error) {
-    console.error('Erreur lors du traitement du message audio:', error);
-    
-    // Amélioration du message d'erreur
-    let errorMessage = "Une erreur est survenue lors du traitement du message audio";
-    
-    if (error instanceof Error) {
-      if (error.message.includes("reconnaissance vocale est désactivée")) {
-        errorMessage = "La reconnaissance vocale est désactivée dans vos paramètres. Veuillez l'activer dans les réglages ou envoyer un message texte.";
-      } else if (error.message.includes("trop court")) {
-        errorMessage = "L'enregistrement audio est trop court. Veuillez parler plus longtemps.";
-      } else if (error.message.includes("trop volumineux")) {
-        errorMessage = "L'enregistrement audio est trop long. Veuillez enregistrer un message plus court.";
-      } else if (error.message.includes("invalide") || error.message.includes("incomplet")) {
-        errorMessage = "Format audio non reconnu. Veuillez réessayer.";
-      } else {
-        errorMessage = error.message;
-      }
-    }
-    
-    setError(errorMessage);
-    
-    // Mise à jour du message utilisateur pour indiquer l'erreur
-    setMessages(prev => 
-      prev.map(msg => 
-        msg.id === messageId 
-          ? { ...msg, content: "Erreur: " + errorMessage }
-          : msg
-      )
-    );
-    
-    // Message d'erreur de l'assistant
-    const errorResponse: Message = {
-      id: `msg-${Date.now()}-error`,
-      content: `Désolé, une erreur s'est produite: ${errorMessage}`,
-      timestamp: new Date(),
-      direction: 'incoming'
-    };
-    
-    if (!sentMessagesRef.current.has(errorResponse.id)) {
-      setMessages(prev => [...prev, errorResponse]);
-      await sendMessageToCurrentUser(errorResponse.content).catch(err => {
-        console.error("Erreur lors de l'envoi du message d'erreur:", err);
-      });
-      sentMessagesRef.current.add(errorResponse.id);
-    }
-  } finally {
-    setIsLoading(false);
-  }
 };
 
 export default ChatInterface;
