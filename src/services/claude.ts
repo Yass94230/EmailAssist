@@ -6,6 +6,7 @@ interface GenerateResponseOptions {
   phoneNumber: string;
   isAudioInput?: boolean;
   audioData?: string;
+  mimeType?: string;
 }
 
 interface GenerateResponseResult {
