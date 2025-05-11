@@ -9,10 +9,8 @@ const corsHeaders = {
 
 console.info('WhatsApp Webhook function started');
 
-// ... (autres fonctions utilitaires inchangées)
-
-// Fonction améliorée pour l'indicateur de frappe
-async function sendTypingIndicator(to: string, isAudioMessage: boolean = false) {
+// Fonction pour envoyer un message d'état via WhatsApp
+async function sendStatusMessage(to: string, status: string) {
   const twilioAccountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
   const twilioAuthToken = Deno.env.get("TWILIO_AUTH_TOKEN");
   const twilioWhatsAppNumber = Deno.env.get("TWILIO_WHATSAPP_NUMBER") || "+14155238886";
@@ -25,16 +23,12 @@ async function sendTypingIndicator(to: string, isAudioMessage: boolean = false) 
     const formattedTo = to.startsWith('+') ? to : `+${to}`;
     const formattedFrom = twilioWhatsAppNumber.startsWith('+') ? twilioWhatsAppNumber : `+${twilioWhatsAppNumber}`;
     
-    const message = isAudioMessage 
-      ? "L'assistant traite votre message vocal..." 
-      : "L'assistant est en train d'écrire...";
-
     const twilioEndpoint = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
     const formData = new URLSearchParams();
     
     formData.append('To', `whatsapp:${formattedTo}`);
     formData.append('From', `whatsapp:${formattedFrom}`);
-    formData.append('Body', message);
+    formData.append('Body', status);
 
     const response = await fetch(twilioEndpoint, {
       method: "POST",
@@ -46,11 +40,10 @@ async function sendTypingIndicator(to: string, isAudioMessage: boolean = false) 
     });
 
     if (!response.ok) {
-      console.warn("Échec de l'envoi de l'indicateur de frappe:", await response.text());
+      console.warn("Échec de l'envoi du message d'état:", await response.text());
     }
   } catch (error) {
-    console.error("Erreur lors de l'envoi de l'indicateur de frappe:", error);
-    // On continue même si l'envoi de l'indicateur échoue
+    console.error("Erreur lors de l'envoi du message d'état:", error);
   }
 }
 
@@ -78,17 +71,17 @@ Deno.serve(async (req) => {
       ))
     );
 
-    // Envoyer l'indicateur approprié selon le type de message
-    await sendTypingIndicator(from, isAudioMessage);
-    
     if (isAudioMessage && voiceRecognitionEnabled) {
       try {
+        // Indiquer que l'assistant traite le message vocal
+        await sendStatusMessage(from, "🎧 Transcription du message vocal en cours...");
+        
         console.log("Transcription d'un message audio:", mediaUrl.toString());
         const transcribedText = await transcribeVoiceMessage(mediaUrl.toString());
         console.log("Transcription réussie:", transcribedText);
         
-        // Envoyer un nouvel indicateur pour la génération de réponse
-        await sendTypingIndicator(from, false);
+        // Indiquer que l'assistant génère une réponse
+        await sendStatusMessage(from, "✍️ L'assistant prépare une réponse...");
         
         const claudeResponse = await getClaudeResponse(
           transcribedText,
@@ -114,6 +107,9 @@ Deno.serve(async (req) => {
       }
     } else if (messageBody) {
       try {
+        // Indiquer que l'assistant réfléchit
+        await sendStatusMessage(from, "🤔 L'assistant réfléchit à votre message...");
+        
         console.log("Traitement d'un message texte:", messageBody.toString().substring(0, 50) + '...');
         
         const claudeResponse = await getClaudeResponse(
