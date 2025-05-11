@@ -11,6 +11,7 @@ interface SendMessageResponse {
   sid?: string;
   error?: string;
   details?: string;
+  retryAfter?: number;
 }
 
 /**
@@ -28,9 +29,36 @@ const retry = async <T>(
     if (retries === 0) {
       throw error;
     }
-    await new Promise(resolve => setTimeout(resolve, delay));
+    
+    // Check if error indicates service is down
+    if (error instanceof Error && 
+        error.message.includes("temporairement indisponible")) {
+      // Longer delay for service outages
+      await new Promise(resolve => setTimeout(resolve, delay * 2));
+    } else {
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    
     return retry(fn, retries - 1, delay * backoff, backoff);
   }
+};
+
+// Circuit breaker state
+let failureCount = 0;
+let lastFailureTime: number | null = null;
+const FAILURE_THRESHOLD = 3;
+const CIRCUIT_RESET_TIME = 5 * 60 * 1000; // 5 minutes
+
+const isCircuitOpen = (): boolean => {
+  if (failureCount >= FAILURE_THRESHOLD) {
+    if (lastFailureTime && Date.now() - lastFailureTime < CIRCUIT_RESET_TIME) {
+      return true;
+    }
+    // Reset circuit after reset time
+    failureCount = 0;
+    lastFailureTime = null;
+  }
+  return false;
 };
 
 /**
@@ -39,6 +67,17 @@ const retry = async <T>(
 export const sendMessage = async ({ to, message }: SendMessageParams): Promise<SendMessageResponse> => {
   try {
     console.log(`Tentative d'envoi d'un message WhatsApp à ${to}`);
+    
+    // Check circuit breaker
+    if (isCircuitOpen()) {
+      const waitTime = Math.ceil((CIRCUIT_RESET_TIME - (Date.now() - (lastFailureTime || 0))) / 1000);
+      return {
+        success: false,
+        message: "Service temporairement désactivé",
+        error: `Trop d'erreurs consécutives. Réessayez dans ${waitTime} secondes.`,
+        retryAfter: waitTime
+      };
+    }
     
     // Vérifie que les paramètres sont valides
     if (!to || !message) {
@@ -96,11 +135,17 @@ export const sendMessage = async ({ to, message }: SendMessageParams): Promise<S
           } else if (statusCode === 401 || statusCode === 403) {
             throw new Error("Erreur d'authentification. Veuillez vous reconnecter.");
           } else if (statusCode >= 500) {
+            failureCount++;
+            lastFailureTime = Date.now();
             throw new Error("Le service WhatsApp est temporairement indisponible. Veuillez réessayer plus tard.");
           }
           
           throw new Error(`Erreur API (${statusCode}): ${errorDetails}`);
         }
+        
+        // Reset circuit breaker on success
+        failureCount = 0;
+        lastFailureTime = null;
         
         // Vérification de la structure de la réponse
         if (!data || typeof data !== 'object') {
@@ -141,11 +186,14 @@ export const sendMessage = async ({ to, message }: SendMessageParams): Promise<S
     // Construction d'un message d'erreur utilisateur plus informatif
     let userMessage = "Échec de l'envoi du message";
     let errorDetails = error instanceof Error ? error.message : "Erreur inconnue";
+    let retryAfter: number | undefined;
     
     if (errorDetails.includes("temporairement indisponible")) {
-      userMessage = "Le service WhatsApp est momentanément indisponible. Veuillez réessayer dans quelques minutes.";
+      userMessage = "Le service WhatsApp est momentanément indisponible. Nous réessaierons automatiquement dans quelques minutes.";
+      retryAfter = 300; // 5 minutes
     } else if (errorDetails.includes("limite de requêtes")) {
       userMessage = "Trop de messages envoyés. Veuillez patienter quelques minutes avant de réessayer.";
+      retryAfter = 180; // 3 minutes
     } else if (errorDetails.includes("authentification")) {
       userMessage = "Votre session a expiré. Veuillez vous reconnecter.";
     }
@@ -154,7 +202,8 @@ export const sendMessage = async ({ to, message }: SendMessageParams): Promise<S
       success: false,
       message: userMessage,
       error: errorDetails,
-      details: error instanceof Error ? error.stack : undefined
+      details: error instanceof Error ? error.stack : undefined,
+      retryAfter
     };
   }
 };

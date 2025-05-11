@@ -34,11 +34,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [isVoiceRecognitionEnabled, setIsVoiceRecognitionEnabled] = useState(true);
   const [voiceType, setVoiceType] = useState('alloy');
+  const [retryTimeout, setRetryTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [retryMessageId, setRetryMessageId] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sentMessagesRef = useRef<Set<string>>(new Set());
   const supabase = useSupabaseClient();
   const session = useSession();
+
+  // Cleanup retry timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+    };
+  }, [retryTimeout]);
 
   // Fonction pour faire défiler automatiquement jusqu'au dernier message
   const scrollToBottom = () => {
@@ -333,7 +344,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         
         if (!sentMessagesRef.current.has(assistantMessage.id)) {
           setMessages(prev => [...prev, assistantMessage]);
-          await sendMessageToCurrentUser(response.text);
+          const whatsappResponse = await sendMessageToCurrentUser(response.text);
+          
+          if (!whatsappResponse.success && whatsappResponse.retryAfter) {
+            handleMessageRetry(response.text, whatsappResponse.retryAfter);
+          }
+          
           sentMessagesRef.current.add(assistantMessage.id);
         }
       } catch (audioProcessingError) {
@@ -367,7 +383,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         
         if (!sentMessagesRef.current.has(fallbackMessage.id)) {
           setMessages(prev => [...prev, fallbackMessage]);
-          await sendMessageToCurrentUser(fallbackResponse.text);
+          const whatsappResponse = await sendMessageToCurrentUser(fallbackResponse.text);
+          
+          if (!whatsappResponse.success && whatsappResponse.retryAfter) {
+            handleMessageRetry(fallbackResponse.text, whatsappResponse.retryAfter);
+          }
+          
           sentMessagesRef.current.add(fallbackMessage.id);
         }
       }
@@ -412,14 +433,50 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       
       if (!sentMessagesRef.current.has(errorResponse.id)) {
         setMessages(prev => [...prev, errorResponse]);
-        await sendMessageToCurrentUser(errorResponse.content).catch(err => {
-          console.error("Erreur lors de l'envoi du message d'erreur:", err);
-        });
+        const whatsappResponse = await sendMessageToCurrentUser(errorResponse.content);
+        
+        if (!whatsappResponse.success && whatsappResponse.retryAfter) {
+          handleMessageRetry(errorResponse.content, whatsappResponse.retryAfter);
+        }
+        
         sentMessagesRef.current.add(errorResponse.id);
       }
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Handle message retry when WhatsApp service is unavailable
+  const handleMessageRetry = (message: string, retryAfter: number) => {
+    const retryId = `retry-${Date.now()}`;
+    setRetryMessageId(retryId);
+    
+    // Clear any existing retry timeout
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+    }
+    
+    // Set new retry timeout
+    const timeout = setTimeout(async () => {
+      try {
+        const response = await sendMessageToCurrentUser(message);
+        if (response.success) {
+          setError(null);
+          setRetryMessageId(null);
+        } else if (response.retryAfter) {
+          // If still unavailable, retry again
+          handleMessageRetry(message, response.retryAfter);
+        }
+      } catch (error) {
+        console.error('Error during message retry:', error);
+        setError("Échec de la nouvelle tentative d'envoi. Veuillez réessayer manuellement.");
+      }
+    }, retryAfter * 1000);
+    
+    setRetryTimeout(timeout);
+    
+    // Update UI to show retry status
+    setError(`Message en attente de renvoi (${Math.ceil(retryAfter / 60)} minutes)`);
   };
   
   // Envoi d'un message texte
@@ -464,6 +521,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     try {
       // Traitement spécial pour la commande "connecter email"
       if (messageToSend.toLowerCase().includes('connecter email')) {
+        
         console.log("Détection de la commande 'connecter email'");
         try {
           console.log("Génération du lien de connexion pour:", phoneNumber);
@@ -484,7 +542,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
 
           if (!sentMessagesRef.current.has(response.id)) {
             setMessages(prev => [...prev, response]);
-            await sendMessageToCurrentUser(response.content);
+            const whatsappResponse = await sendMessageToCurrentUser(response.content);
+            
+            if (!whatsappResponse.success && whatsappResponse.retryAfter) {
+              handleMessageRetry(response.content, whatsappResponse.retryAfter);
+            }
+            
             sentMessagesRef.current.add(response.id);
           }
           
@@ -561,7 +624,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       
       if (!sentMessagesRef.current.has(assistantMessage.id)) {
         setMessages(prev => [...prev, assistantMessage]);
-        await sendMessageToCurrentUser(response.text);
+        const whatsappResponse = await sendMessageToCurrentUser(response.text);
+        
+        if (!whatsappResponse.success && whatsappResponse.retryAfter) {
+          handleMessageRetry(response.text, whatsappResponse.retryAfter);
+        }
+        
         sentMessagesRef.current.add(assistantMessage.id);
       }
     } catch (error) {
@@ -619,7 +687,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         <Alert variant="error" className="mx-4 mb-4">
           <div className="flex items-start gap-2">
             <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
-            <span>{error}</span>
+            <span>
+              {error}
+              {retryMessageId && (
+                <span className="ml-2 text-sm text-gray-500">
+                  (Nouvelle tentative automatique en cours...)
+                </span>
+              )}
+            </span>
           </div>
         </Alert>
       )}
