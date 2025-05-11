@@ -157,10 +157,7 @@ serve(async (req) => {
     if (isAudioInput && audioData) {
       try {
         console.log("Traitement de l'entrée audio...");
-        
-        // Déterminer le type MIME approprié
-        const mediaType = mimeType || 'audio/mp3';
-        console.log("Type MIME utilisé:", mediaType);
+        console.log("Type MIME utilisé:", mimeType);
         
         const audioProcessingRes = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -180,7 +177,7 @@ serve(async (req) => {
                     type: "audio",
                     source: {
                       type: "base64",
-                      media_type: mediaType,
+                      media_type: mimeType,
                       data: audioData
                     }
                   }
