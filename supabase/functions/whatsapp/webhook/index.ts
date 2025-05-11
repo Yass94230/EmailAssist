@@ -118,6 +118,55 @@ async function getAudioSettings(phoneNumber: string, supabase: any): Promise<{ a
   }
 }
 
+// Fonction pour envoyer un indicateur de saisie à l'utilisateur WhatsApp
+async function sendTypingIndicator(to: string): Promise<void> {
+  const twilioAccountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
+  const twilioAuthToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+  const twilioWhatsAppNumber = Deno.env.get("TWILIO_WHATSAPP_NUMBER") || "+14155238886";
+
+  if (!twilioAccountSid || !twilioAuthToken) {
+    console.log("Configuration Twilio manquante, impossible d'envoyer l'indicateur de saisie");
+    return;
+  }
+
+  try {
+    // Assurez-vous que le numéro est au format correct
+    const formattedTo = to.startsWith('+') ? to : `+${to}`;
+    const formattedFrom = twilioWhatsAppNumber.startsWith('+') ? twilioWhatsAppNumber : `+${twilioWhatsAppNumber}`;
+    
+    console.log(`Envoi d'un indicateur de saisie à: ${formattedTo}`);
+    
+    // Endpoint pour envoyer les indicateurs de saisie WhatsApp
+    const twilioEndpoint = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
+    
+    // Pour WhatsApp, l'indicateur de saisie se fait via un message spécial avec le contenu "is typing..."
+    // C'est une solution temporaire, car Twilio n'a pas d'API officielle pour les indicateurs de saisie WhatsApp
+    const formData = new URLSearchParams();
+    formData.append('To', `whatsapp:${formattedTo}`);
+    formData.append('From', `whatsapp:${formattedFrom}`);
+    formData.append('Body', `\u200C`); // Caractère invisible qui déclenche l'indicateur de saisie
+    
+    const response = await fetch(twilioEndpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": `Basic ${btoa(`${twilioAccountSid}:${twilioAuthToken}`)}`,
+      },
+      body: formData.toString()
+    });
+    
+    if (!response.ok) {
+      const responseText = await response.text();
+      console.warn(`Échec de l'envoi de l'indicateur de saisie: ${response.status} - ${responseText.substring(0, 200)}`);
+    } else {
+      console.log("Indicateur de saisie envoyé avec succès");
+    }
+  } catch (error) {
+    console.warn("Erreur lors de l'envoi de l'indicateur de saisie:", error);
+    // On ignore l'erreur car cela ne doit pas bloquer le flux principal
+  }
+}
+
 // Fonction pour transcrire un message vocal avec Claude
 async function transcribeVoiceMessage(mediaUrl: string): Promise<string> {
   try {
@@ -686,9 +735,15 @@ Deno.serve(async (req) => {
     
     if (isAudioMessage && voiceRecognitionEnabled) {
       try {
+        // Envoyer l'indicateur de saisie immédiatement
+        await sendTypingIndicator(from);
+        
         console.log("Transcription d'un message audio:", mediaUrl.toString());
         const transcribedText = await transcribeVoiceMessage(mediaUrl.toString());
         console.log("Transcription réussie:", transcribedText);
+        
+        // Envoyer un autre indicateur de saisie pendant que Claude génère la réponse
+        await sendTypingIndicator(from);
         
         // Obtenir une réponse basée sur la transcription
         const claudeResponse = await getClaudeResponse(
@@ -722,6 +777,9 @@ Deno.serve(async (req) => {
     // Traitement d'un message texte
     else if (messageText && messageText.trim().length > 0) {
       try {
+        // Envoyer l'indicateur de saisie immédiatement
+        await sendTypingIndicator(from);
+        
         console.log("Traitement d'un message texte:", messageText.substring(0, 50) + 
           (messageText.length > 50 ? '...' : ''));
         
