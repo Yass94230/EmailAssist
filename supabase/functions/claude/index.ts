@@ -12,12 +12,26 @@ Tu communiques exclusivement en français.
 Pour la connexion email, tu dois TOUJOURS utiliser le lien unique généré.
 Tu ne dois JAMAIS mentionner d'URL générique ou demander à l'utilisateur d'aller sur une interface web.`;
 
-// Validation des données audio
+// Validation des données audio améliorée
 function validateAudioData(audioData: string): boolean {
   if (!audioData) return false;
-  // Vérifie si c'est une chaîne base64 valide
-  const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-  return base64Regex.test(audioData);
+  
+  // Vérification basique d'une chaîne base64 valide
+  if (audioData.length < 100) {
+    console.warn("Données audio trop courtes ou vides");
+    return false;
+  }
+
+  // Vérifier si c'est une chaîne base64 valide avec une expression régulière plus permissive
+  const base64Regex = /^[A-Za-z0-9+/]*={0,3}$/;
+  const isBase64Valid = base64Regex.test(audioData);
+    
+  if (!isBase64Valid) {
+    console.warn("Format base64 invalide");
+    return false;
+  }
+
+  return true;
 }
 
 // Gestion des erreurs de l'API Claude
@@ -56,7 +70,8 @@ serve(async (req) => {
         isAudioInput: !!requestData.isAudioInput,
         generateAudio: !!requestData.generateAudio,
         hasAudioData: !!requestData.audioData,
-        audioDataLength: requestData.audioData ? `${Math.floor(requestData.audioData.length / 1000)}K` : 'none'
+        audioDataLength: requestData.audioData ? `${Math.floor(requestData.audioData.length / 1000)}K` : 'none',
+        mimeType: requestData.mimeType || 'non spécifié'
       });
     } catch (parseError) {
       console.error("Erreur lors du parsing JSON:", parseError);
@@ -69,7 +84,15 @@ serve(async (req) => {
       );
     }
     
-    const { prompt, phoneNumber, generateAudio = true, isAudioInput = false, audioData, voiceType = 'alloy' } = requestData;
+    const { 
+      prompt, 
+      phoneNumber, 
+      generateAudio = true, 
+      isAudioInput = false, 
+      audioData, 
+      voiceType = 'alloy',
+      mimeType = 'audio/mp3' // Valeur par défaut pour le type MIME
+    } = requestData;
     
     if (isAudioInput) {
       if (!audioData) {
@@ -135,6 +158,10 @@ serve(async (req) => {
       try {
         console.log("Traitement de l'entrée audio...");
         
+        // Déterminer le type MIME approprié
+        const mediaType = mimeType || 'audio/mp3';
+        console.log("Type MIME utilisé:", mediaType);
+        
         const audioProcessingRes = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
@@ -153,7 +180,7 @@ serve(async (req) => {
                     type: "audio",
                     source: {
                       type: "base64",
-                      media_type: "audio/mp3",
+                      media_type: mediaType,
                       data: audioData
                     }
                   }
