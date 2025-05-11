@@ -18,9 +18,38 @@ const MAX_AUDIO_SIZE = 10 * 1024 * 1024;
 
 // Validation du format des données audio
 function isValidAudioData(data: string): boolean {
-  // Vérifie si c'est une chaîne base64 valide
-  const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-  return base64Regex.test(data);
+  try {
+    // Vérifie si c'est une chaîne base64 valide
+    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+    if (!base64Regex.test(data)) {
+      return false;
+    }
+
+    // Vérifie la taille minimale (pour éviter les enregistrements trop courts)
+    const MIN_SIZE = 1000; // 1KB
+    if (data.length < MIN_SIZE) {
+      return false;
+    }
+
+    // Vérifie si les données commencent par un en-tête audio valide
+    const decodedData = atob(data);
+    const header = decodedData.slice(0, 4);
+    
+    // En-têtes valides pour WebM et MP3
+    const validHeaders = [
+      'OggS', // Ogg
+      '\x1AE\xDF\xA3', // WebM
+      'ID3', // MP3
+      'RIFF' // WAV
+    ];
+
+    return validHeaders.some(validHeader => 
+      header.includes(validHeader) || decodedData.includes(validHeader)
+    );
+  } catch (e) {
+    console.error('Erreur lors de la validation audio:', e);
+    return false;
+  }
 }
 
 export async function generateResponse(
@@ -48,7 +77,7 @@ export async function generateResponse(
       }
 
       if (!isValidAudioData(options.audioData)) {
-        throw new Error("Format des données audio invalide");
+        throw new Error("Format audio non valide. Assurez-vous d'utiliser un format supporté (WebM, MP3 ou WAV)");
       }
     }
 
@@ -95,9 +124,9 @@ export async function generateResponse(
       // Messages d'erreur plus spécifiques basés sur le code de statut
       switch (response.status) {
         case 400:
-          throw new Error("Format de données audio non valide ou corrompu");
+          throw new Error("Format de données audio non valide. Utilisez WebM, MP3 ou WAV.");
         case 413:
-          throw new Error("Fichier audio trop volumineux");
+          throw new Error("Fichier audio trop volumineux (maximum 10MB)");
         case 429:
           throw new Error("Trop de requêtes. Veuillez réessayer dans quelques instants");
         case 500:
@@ -133,8 +162,8 @@ export async function generateResponse(
         messageErreur = "Trop de requêtes. Veuillez réessayer dans quelques instants.";
       } else if (error.message.includes("401") || error.message.includes("403")) {
         messageErreur = "Problème d'authentification avec le service Claude. Veuillez vous reconnecter.";
-      } else if (error.message.includes("Format") || error.message.includes("corrompu")) {
-        messageErreur = "Le format audio n'est pas valide. Veuillez réessayer avec un autre enregistrement.";
+      } else if (error.message.includes("Format") || error.message.includes("non valide")) {
+        messageErreur = "Format audio non supporté. Veuillez utiliser WebM, MP3 ou WAV.";
       } else {
         messageErreur = error.message;
       }

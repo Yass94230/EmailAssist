@@ -15,6 +15,14 @@ interface ChatInterfaceProps {
   phoneNumber: string;
 }
 
+// Formats audio supportés
+const SUPPORTED_MIME_TYPES = [
+  'audio/webm',
+  'audio/mp3',
+  'audio/wav',
+  'audio/ogg'
+];
+
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -98,6 +106,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       console.error('Erreur lors du chargement des paramètres audio:', err);
     }
   };
+
+  // Fonction pour vérifier si le format audio est supporté
+  const getSupportedMimeType = (): string | null => {
+    return SUPPORTED_MIME_TYPES.find(mimeType => MediaRecorder.isTypeSupported(mimeType)) || null;
+  };
   
   // Démarrage de l'enregistrement audio
   const startRecording = async () => {
@@ -109,10 +122,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         setError("La reconnaissance vocale est désactivée dans vos paramètres. Veuillez l'activer dans les réglages.");
         return;
       }
+
+      // Vérifier le support du format audio
+      const supportedMimeType = getSupportedMimeType();
+      if (!supportedMimeType) {
+        setError("Votre navigateur ne supporte pas les formats audio requis (WebM, MP3 ou WAV)");
+        return;
+      }
       
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
+        mimeType: supportedMimeType
       });
       
       setMediaRecorder(recorder);
@@ -129,12 +149,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         
         try {
           // Création d'un blob avec le type MIME approprié
-          const audioBlob = new Blob(chunks, { type: recorder.mimeType });
+          const audioBlob = new Blob(chunks, { type: supportedMimeType });
           setAudioChunks(chunks);
           
           // Vérification de la taille du blob
           if (audioBlob.size < 1000) {
             throw new Error("L'enregistrement audio est trop court ou vide");
+          }
+
+          if (audioBlob.size > 10 * 1024 * 1024) {
+            throw new Error("L'enregistrement audio est trop volumineux (maximum 10MB)");
           }
           
           console.log(`Taille du blob audio: ${audioBlob.size} octets`);
@@ -185,6 +209,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
           errorMsg = "L'accès au microphone a été refusé. Veuillez autoriser l'accès dans les paramètres de votre navigateur.";
         } else if (err.name === 'NotFoundError') {
           errorMsg = "Aucun microphone détecté. Veuillez connecter un microphone et réessayer.";
+        } else if (err.name === 'NotSupportedError') {
+          errorMsg = "Votre navigateur ne supporte pas l'enregistrement audio. Veuillez utiliser un navigateur plus récent.";
         }
       }
       
