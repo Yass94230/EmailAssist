@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useSupabaseClient } from '@supabase/auth-helpers-react';
+import { useSupabaseClient, useUser } from '@supabase/auth-helpers-react';
 import { MessageSquare, Trash2, Check, AlertCircle, RefreshCw, Phone } from 'lucide-react';
 import { verifyWhatsAppNumber } from '../../services/whatsapp';
 import { Button } from '../ui/Button';
@@ -22,6 +22,7 @@ const WhatsAppConfig: React.FC = () => {
   const [newPhoneNumber, setNewPhoneNumber] = useState('');
   const [isAddingNumber, setIsAddingNumber] = useState(false);
   const supabase = useSupabaseClient();
+  const user = useUser();
 
   const loadUsers = async () => {
     try {
@@ -29,6 +30,7 @@ const WhatsAppConfig: React.FC = () => {
       const { data, error } = await supabase
         .from('user_whatsapp')
         .select('*')
+        .eq('user_id', user?.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -42,8 +44,10 @@ const WhatsAppConfig: React.FC = () => {
   };
 
   useEffect(() => {
-    loadUsers();
-  }, []);
+    if (user) {
+      loadUsers();
+    }
+  }, [user]);
 
   const handleDelete = async (id: string) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce numéro ?')) {
@@ -54,7 +58,8 @@ const WhatsAppConfig: React.FC = () => {
       const { error } = await supabase
         .from('user_whatsapp')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', user?.id);
 
       if (error) throw error;
 
@@ -90,7 +95,7 @@ const WhatsAppConfig: React.FC = () => {
   const handleAddNumber = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!newPhoneNumber) {
+    if (!newPhoneNumber || !user) {
       setError('Le numéro de téléphone est requis');
       return;
     }
@@ -99,22 +104,26 @@ const WhatsAppConfig: React.FC = () => {
       setIsAddingNumber(true);
       setError(null);
 
-      // Vérifier si le numéro existe déjà
+      // Check if number already exists for this user
       const { data: existingNumber } = await supabase
         .from('user_whatsapp')
         .select('id')
         .eq('phone_number', newPhoneNumber)
-        .single();
+        .eq('user_id', user.id)
+        .maybeSingle();
 
       if (existingNumber) {
         setError('Ce numéro est déjà enregistré');
         return;
       }
 
-      // Ajouter le nouveau numéro
+      // Add new number with user_id
       const { error: insertError } = await supabase
         .from('user_whatsapp')
-        .insert([{ phone_number: newPhoneNumber }]);
+        .insert([{ 
+          phone_number: newPhoneNumber,
+          user_id: user.id
+        }]);
 
       if (insertError) throw insertError;
 
@@ -122,7 +131,6 @@ const WhatsAppConfig: React.FC = () => {
       setNewPhoneNumber('');
       loadUsers();
 
-      // Stocker le numéro dans localStorage
       localStorage.setItem('userWhatsAppNumber', newPhoneNumber);
     } catch (err) {
       setError('Erreur lors de l\'ajout du numéro');
@@ -186,7 +194,7 @@ const WhatsAppConfig: React.FC = () => {
           </div>
           <Button
             type="submit"
-            disabled={isAddingNumber}
+            disabled={isAddingNumber || !user}
             className="w-full sm:w-auto"
           >
             {isAddingNumber ? 'Ajout en cours...' : 'Ajouter le numéro'}

@@ -9,7 +9,6 @@ const corsHeaders = {
 console.info('User WhatsApp Function Started');
 
 Deno.serve(async (req: Request) => {
-  // Handle OPTIONS request
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
@@ -18,7 +17,6 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Get Supabase client
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     
@@ -33,7 +31,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Parse request body
     const { phoneNumber } = await req.json();
     
     if (!phoneNumber) {
@@ -48,11 +45,9 @@ Deno.serve(async (req: Request) => {
 
     console.log(`Registering WhatsApp number ${phoneNumber}`);
 
-    // Create Supabase client
     const { createClient } = await import("npm:@supabase/supabase-js@2");
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get user ID from session if available
     let userId = null;
     try {
       const authHeader = req.headers.get('Authorization');
@@ -66,20 +61,27 @@ Deno.serve(async (req: Request) => {
       }
     } catch (error) {
       console.warn("Could not retrieve user ID:", error);
-      // Continue without user ID
     }
 
-    // Save number to database
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: "User authentication required" }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
+    }
+
     const { data, error } = await supabase
       .from('user_whatsapp')
       .upsert({
         user_id: userId,
         phone_number: phoneNumber,
         updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'user_id'
       })
-      .select();
+      .select()
+      .single();
 
     if (error) {
       console.error("Error saving to database:", error);
@@ -95,7 +97,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Return result
     return new Response(
       JSON.stringify({ 
         success: true,
@@ -107,7 +108,6 @@ Deno.serve(async (req: Request) => {
       }
     );
   } catch (error) {
-    // Handle general errors
     console.error("Server error:", error);
     return new Response(
       JSON.stringify({ 
