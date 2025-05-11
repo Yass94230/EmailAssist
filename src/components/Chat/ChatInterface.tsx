@@ -32,17 +32,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   const supabase = useSupabaseClient();
   const session = useSession();
 
-  // Fonction pour scroller automatiquement vers le bas de la conversation
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
   
-  // Scroller vers le bas quand les messages changent
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
   
-  // Nettoyer le MediaRecorder quand le composant est démonté
   useEffect(() => {
     return () => {
       if (mediaRecorder) {
@@ -51,7 +48,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     };
   }, [mediaRecorder]);
   
-  // Initialiser avec un message de bienvenue
   useEffect(() => {
     const welcomeMessage: Message = {
       id: 'welcome',
@@ -71,7 +67,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     loadAudioSettings();
   }, []);
   
-  // Charger les paramètres audio de l'utilisateur
   const loadAudioSettings = async () => {
     try {
       console.log("Chargement des paramètres audio pour:", phoneNumber);
@@ -96,11 +91,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       }
     } catch (err) {
       console.error('Erreur lors du chargement des paramètres audio:', err);
-      // Continuer avec les valeurs par défaut en cas d'erreur
     }
   };
   
-  // Démarrer l'enregistrement audio
   const startRecording = async () => {
     try {
       console.log("Demande d'accès au microphone...");
@@ -149,7 +142,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     }
   };
   
-  // Arrêter l'enregistrement audio
   const stopRecording = () => {
     if (mediaRecorder && isRecording) {
       console.log("Arrêt de l'enregistrement audio");
@@ -159,7 +151,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     }
   };
   
-  // Traiter un message audio
   const handleAudioInput = async (audioBase64: string, messageId: string) => {
     if (isLoading || !session) {
       console.log("Impossible de traiter l'audio:", { isLoading, hasSession: !!session });
@@ -178,6 +169,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         isAudioInput: true,
         audioData: audioBase64
       });
+      
+      if (!response || (!response.text && !response.audioUrl)) {
+        throw new Error("Réponse invalide du serveur");
+      }
       
       console.log("Réponse audio générée");
       
@@ -204,24 +199,50 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       }
     } catch (error) {
       console.error('Erreur lors du traitement du message audio:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Une erreur est survenue lors du traitement du message audio';
+      
+      let errorMessage = "Une erreur est survenue lors du traitement du message audio";
+      
+      if (error instanceof Error) {
+        if ('details' in error && typeof (error as any).details === 'string') {
+          errorMessage = (error as any).details;
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+      } else if (typeof error === 'object' && error !== null) {
+        if ('message' in error) {
+          errorMessage = (error as { message: string }).message;
+        } else if ('details' in error) {
+          errorMessage = String((error as { details: unknown }).details);
+        }
+      }
+      
       setError(errorMessage);
       
       setMessages(prev => 
         prev.map(msg => 
           msg.id === messageId 
-            ? { ...msg, content: "Erreur lors du traitement du message audio" }
+            ? { ...msg, content: "Erreur: " + errorMessage }
             : msg
         )
       );
+      
+      const errorResponse: Message = {
+        id: `msg-${Date.now()}-error`,
+        content: `Désolé, une erreur s'est produite: ${errorMessage}`,
+        timestamp: new Date(),
+        direction: 'incoming'
+      };
+      
+      if (!sentMessagesRef.current.has(errorResponse.id)) {
+        setMessages(prev => [...prev, errorResponse]);
+        sentMessagesRef.current.add(errorResponse.id);
+      }
     } finally {
       setIsLoading(false);
     }
   };
   
-  // Gérer l'envoi d'un message texte
   const handleSendMessage = async () => {
-    // Vérification des prérequis
     if (!inputValue.trim()) {
       console.log("Message vide, annulation de l'envoi");
       return;
@@ -253,15 +274,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       return;
     }
     
-    // Ajouter le message de l'utilisateur à la conversation
     setMessages(prev => [...prev, userMessage]);
     const messageToSend = inputValue;
-    setInputValue(''); // Vider le champ de saisie immédiatement
+    setInputValue('');
     setIsLoading(true);
     sentMessagesRef.current.add(userMessage.id);
     
     try {
-      // Gérer la commande "connecter email"
       if (messageToSend.toLowerCase().includes('connecter email')) {
         console.log("Détection de la commande 'connecter email'");
         try {
@@ -307,7 +326,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         }
       }
 
-      // Récupérer ou créer les paramètres utilisateur
       console.log("Vérification des paramètres utilisateur");
       const { data: settings, error: settingsError } = await supabase
         .from('user_settings')
@@ -338,7 +356,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         }
       }
 
-      // Générer une réponse via Claude
       console.log("Génération d'une réponse Claude");
       const response = await generateResponse(messageToSend, {
         generateAudio: settings?.audio_enabled ?? isAudioEnabled,
@@ -363,17 +380,24 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       }
     } catch (error) {
       console.error('Erreur lors de l\'envoi du message:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Une erreur est survenue lors de l\'envoi du message';
+      let errorMessage = "Une erreur est survenue lors de l'envoi du message";
+      
+      if (error instanceof Error) {
+        if ('details' in error && typeof (error as any).details === 'string') {
+          errorMessage = (error as any).details;
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+      }
+      
       setError(errorMessage);
       
-      // Retirer le message utilisateur en cas d'erreur pour permettre une nouvelle tentative
       setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
       sentMessagesRef.current.delete(userMessage.id);
       
-      // Ajouter un message d'erreur
       const errorResponse: Message = {
         id: `msg-${Date.now()}-error`,
-        content: "Désolé, une erreur s'est produite. Veuillez réessayer.",
+        content: `Désolé, une erreur s'est produite: ${errorMessage}`,
         timestamp: new Date(),
         direction: 'incoming'
       };
@@ -384,7 +408,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     }
   };
   
-  // Gestion de la touche Entrée
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
