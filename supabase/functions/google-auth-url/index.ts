@@ -1,13 +1,19 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Max-Age': '86400',
 };
 
+interface RequestBody {
+  phoneNumber: string;
+}
+
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
       headers: corsHeaders,
@@ -15,54 +21,98 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { phoneNumber } = await req.json();
-
-    if (!phoneNumber) {
-      throw new Error("Le numéro de téléphone est requis");
+    // Validate request method
+    if (req.method !== 'POST') {
+      throw new Error('Method not allowed');
     }
 
-    const clientId = Deno.env.get("GOOGLE_CLIENT_ID");
-    const redirectUri = Deno.env.get("GOOGLE_REDIRECT_URI");
+    // Parse request body
+    const body: RequestBody = await req.json().catch(() => {
+      throw new Error('Invalid request body');
+    });
 
-    if (!clientId || !redirectUri) {
-      throw new Error("Configuration Google manquante");
+    if (!body.phoneNumber) {
+      throw new Error('Phone number is required');
     }
 
-    // Construire l'URL d'autorisation
-    const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-    authUrl.searchParams.append("client_id", clientId);
-    authUrl.searchParams.append("redirect_uri", redirectUri);
-    authUrl.searchParams.append("response_type", "code");
-    authUrl.searchParams.append("access_type", "offline");
-    authUrl.searchParams.append("prompt", "consent");
-    authUrl.searchParams.append("scope", [
-      "https://www.googleapis.com/auth/gmail.readonly",
-      "https://www.googleapis.com/auth/gmail.send",
-      "https://www.googleapis.com/auth/gmail.modify",
-      "https://www.googleapis.com/auth/gmail.labels",
-      "https://www.googleapis.com/auth/userinfo.email"
-    ].join(" "));
-    
-    // Ajouter le numéro de téléphone comme état pour le récupérer après la redirection
-    authUrl.searchParams.append("state", phoneNumber);
-
-    return new Response(
-      JSON.stringify({ url: authUrl.toString() }),
+    // Initialize Supabase client
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       {
-        headers: { "Content-Type": "application/json", ...corsHeaders },
+        auth: {
+          persistSession: false,
+        }
       }
     );
-  } catch (error) {
-    console.error("Erreur:", error);
+
+    // Generate OAuth state
+    const state = crypto.randomUUID();
+
+    // Store OAuth state
+    const { error: stateError } = await supabaseClient
+      .from('oauth_states')
+      .insert({
+        state,
+        phone_number: body.phoneNumber,
+        created_at: new Date().toISOString(),
+      });
+
+    if (stateError) {
+      throw new Error('Failed to store OAuth state');
+    }
+
+    // Build Google OAuth URL
+    const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
+    const redirectUri = Deno.env.get('GOOGLE_REDIRECT_URI');
+    
+    if (!clientId || !redirectUri) {
+      throw new Error('Missing Google OAuth configuration');
+    }
+
+    const scope = encodeURIComponent([
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.send',
+      'https://www.googleapis.com/auth/gmail.labels',
+      'https://www.googleapis.com/auth/gmail.modify',
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/userinfo.profile'
+    ].join(' '));
+
+    const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+      `client_id=${encodeURIComponent(clientId)}` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&response_type=code` +
+      `&scope=${scope}` +
+      `&access_type=offline` +
+      `&prompt=consent` +
+      `&state=${state}`;
+
     return new Response(
-      JSON.stringify({ 
-        error: "Erreur serveur", 
-        details: error instanceof Error ? error.message : String(error)
+      JSON.stringify({ url: googleAuthUrl }),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
+        status: 200,
+      },
+    );
+
+  } catch (error) {
+    console.error('Error in google-auth-url function:', error);
+
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : 'An unexpected error occurred',
       }),
       {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
+        headers: {
+          'Content-Type': 'application/json',
+          ...corsHeaders,
+        },
+        status: 400,
+      },
     );
   }
 });
