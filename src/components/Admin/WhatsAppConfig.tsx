@@ -117,6 +117,28 @@ const WhatsAppConfig: React.FC = () => {
         return;
       }
 
+      // First, ensure user settings exist
+      const { data: existingSettings } = await supabase
+        .from('user_settings')
+        .select('id')
+        .eq('phone_number', newPhoneNumber)
+        .maybeSingle();
+
+      if (!existingSettings) {
+        // Create user settings if they don't exist
+        const { error: settingsError } = await supabase
+          .from('user_settings')
+          .insert({
+            user_id: user.id,
+            phone_number: newPhoneNumber,
+            audio_enabled: true,
+            voice_type: 'alloy',
+            voice_recognition_enabled: true
+          });
+
+        if (settingsError) throw settingsError;
+      }
+
       // Add new number with user_id
       const { error: insertError } = await supabase
         .from('user_whatsapp')
