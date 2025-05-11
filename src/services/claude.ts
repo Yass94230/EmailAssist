@@ -6,7 +6,7 @@ interface GenerateResponseOptions {
   phoneNumber: string;
   isAudioInput?: boolean;
   audioData?: string;
-  mimeType?: string;
+  mimeType?: string; // Nouveau paramètre pour le type MIME
 }
 
 interface GenerateResponseResult {
@@ -60,7 +60,8 @@ export async function generateResponse(
       audioPresent: !!options.audioData,
       audioTaille: options.audioData ? `${Math.floor(options.audioData.length / 1000)}KB` : 'N/A',
       genererAudio: options.generateAudio,
-      typeVoix: options.voiceType
+      typeVoix: options.voiceType,
+      mimeType: options.mimeType || 'non spécifié'
     });
 
     // Validation améliorée des données audio
@@ -84,7 +85,8 @@ export async function generateResponse(
       generateAudio: options.generateAudio || false,
       voiceType: options.voiceType || 'alloy',
       isAudioInput: options.isAudioInput || false,
-      audioData: options.audioData ? options.audioData.trim() : undefined
+      audioData: options.audioData ? options.audioData.trim() : undefined,
+      mimeType: options.mimeType || 'audio/mp3' // Utilisation du type MIME fourni ou valeur par défaut
     };
 
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
