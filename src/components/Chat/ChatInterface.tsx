@@ -32,14 +32,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
   const supabase = useSupabaseClient();
   const session = useSession();
 
+  // Fonction pour faire défiler automatiquement jusqu'au dernier message
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
   
+  // Défilement automatique quand de nouveaux messages sont ajoutés
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
   
+  // Nettoyage des ressources du MediaRecorder quand le composant est démonté
   useEffect(() => {
     return () => {
       if (mediaRecorder) {
@@ -48,6 +51,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     };
   }, [mediaRecorder]);
   
+  // Initialisation des messages de bienvenue et des paramètres audio
   useEffect(() => {
     const welcomeMessage: Message = {
       id: 'welcome',
@@ -67,6 +71,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     loadAudioSettings();
   }, []);
   
+  // Chargement des paramètres audio depuis Supabase
   const loadAudioSettings = async () => {
     try {
       console.log("Chargement des paramètres audio pour:", phoneNumber);
@@ -94,11 +99,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     }
   };
   
+  // Démarrage de l'enregistrement audio
   const startRecording = async () => {
     try {
       console.log("Demande d'accès au microphone...");
+      
+      // Vérifier si la reconnaissance vocale est activée
+      if (!isVoiceRecognitionEnabled) {
+        setError("La reconnaissance vocale est désactivée dans vos paramètres. Veuillez l'activer dans les réglages.");
+        return;
+      }
+      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
+      const recorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
+      });
+      
       setMediaRecorder(recorder);
       
       const chunks: Blob[] = [];
@@ -110,27 +126,50 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       
       recorder.onstop = async () => {
         console.log("Enregistrement audio terminé");
-        const audioBlob = new Blob(chunks, { type: 'audio/mp3' });
-        setAudioChunks(chunks);
         
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = async () => {
-          const base64data = reader.result as string;
-          const base64Audio = base64data.split(',')[1];
+        try {
+          // Création d'un blob avec le type MIME approprié
+          const audioBlob = new Blob(chunks, { type: recorder.mimeType });
+          setAudioChunks(chunks);
           
-          const audioMessage: Message = {
-            id: `msg-${Date.now()}-user-audio`,
-            content: "Message audio en cours d'envoi...",
-            timestamp: new Date(),
-            direction: 'outgoing',
-            audioUrl: base64data
+          // Vérification de la taille du blob
+          if (audioBlob.size < 1000) {
+            throw new Error("L'enregistrement audio est trop court ou vide");
+          }
+          
+          console.log(`Taille du blob audio: ${audioBlob.size} octets`);
+          
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = async () => {
+            const base64data = reader.result as string;
+            if (!base64data || base64data.length < 100) {
+              throw new Error("Conversion audio en base64 échouée");
+            }
+            
+            const base64Audio = base64data.split(',')[1];
+            
+            const audioMessage: Message = {
+              id: `msg-${Date.now()}-user-audio`,
+              content: "Message audio en cours d'envoi...",
+              timestamp: new Date(),
+              direction: 'outgoing',
+              audioUrl: base64data
+            };
+            
+            setMessages(prev => [...prev, audioMessage]);
+            
+            await handleAudioInput(base64Audio, audioMessage.id);
           };
           
-          setMessages(prev => [...prev, audioMessage]);
-          
-          await handleAudioInput(base64Audio, audioMessage.id);
-        };
+          reader.onerror = (error) => {
+            console.error("Erreur lors de la lecture du fichier audio:", error);
+            setError("Erreur lors de la lecture de l'enregistrement audio");
+          };
+        } catch (error) {
+          console.error("Erreur lors du traitement de l'enregistrement:", error);
+          setError(error instanceof Error ? error.message : "Erreur lors du traitement de l'enregistrement");
+        }
       };
       
       recorder.start();
@@ -138,10 +177,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       console.log("Enregistrement audio démarré");
     } catch (err) {
       console.error('Erreur lors du démarrage de l\'enregistrement:', err);
-      setError('Impossible d\'accéder au microphone. Veuillez vérifier les permissions.');
+      
+      let errorMsg = "Impossible d'accéder au microphone. Veuillez vérifier les permissions.";
+      
+      if (err instanceof DOMException) {
+        if (err.name === 'NotAllowedError') {
+          errorMsg = "L'accès au microphone a été refusé. Veuillez autoriser l'accès dans les paramètres de votre navigateur.";
+        } else if (err.name === 'NotFoundError') {
+          errorMsg = "Aucun microphone détecté. Veuillez connecter un microphone et réessayer.";
+        }
+      }
+      
+      setError(errorMsg);
     }
   };
   
+  // Arrêt de l'enregistrement audio
   const stopRecording = () => {
     if (mediaRecorder && isRecording) {
       console.log("Arrêt de l'enregistrement audio");
@@ -151,6 +202,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     }
   };
   
+  // Traitement d'un message audio
   const handleAudioInput = async (audioBase64: string, messageId: string) => {
     if (isLoading || !session) {
       console.log("Impossible de traiter l'audio:", { isLoading, hasSession: !!session });
@@ -161,63 +213,122 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     setIsLoading(true);
     
     try {
-      console.log("Traitement du message audio...");
-      const response = await generateResponse("", {
-        generateAudio: isAudioEnabled,
-        voiceType,
-        phoneNumber,
-        isAudioInput: true,
-        audioData: audioBase64
-      });
-      
-      if (!response || (!response.text && !response.audioUrl)) {
-        throw new Error("Réponse invalide du serveur");
+      // Validation des données audio
+      if (!audioBase64) {
+        throw new Error("Données audio manquantes");
       }
       
-      console.log("Réponse audio générée");
+      if (audioBase64.length < 100) {
+        throw new Error("Enregistrement audio trop court ou incomplet");
+      }
       
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === messageId 
-            ? { ...msg, content: "Message vocal envoyé", transcription: response.text }
-            : msg
-        )
-      );
-      
-      const assistantMessage: Message = {
-        id: `msg-${Date.now()}-assistant`,
-        content: response.text,
-        timestamp: new Date(),
-        direction: 'incoming',
-        audioUrl: response.audioUrl
-      };
-      
-      if (!sentMessagesRef.current.has(assistantMessage.id)) {
-        setMessages(prev => [...prev, assistantMessage]);
-        await sendMessageToCurrentUser(response.text);
-        sentMessagesRef.current.add(assistantMessage.id);
+      console.log("Traitement du message audio...", {
+        taille: audioBase64.length,
+        debut: audioBase64.substring(0, 20) + '...'
+      });
+
+      // Vérification si la reconnaissance vocale est activée
+      if (!isVoiceRecognitionEnabled) {
+        throw new Error("La reconnaissance vocale est désactivée dans vos paramètres");
+      }
+
+      // Tentative de traitement audio
+      try {
+        const response = await generateResponse("", {
+          generateAudio: isAudioEnabled,
+          voiceType,
+          phoneNumber,
+          isAudioInput: true,
+          audioData: audioBase64
+        });
+        
+        if (!response || (!response.text && !response.audioUrl)) {
+          throw new Error("Réponse invalide du serveur");
+        }
+        
+        console.log("Réponse audio générée avec succès");
+        
+        // Mise à jour du message d'envoi
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === messageId 
+              ? { ...msg, content: "Message vocal envoyé", transcription: response.text }
+              : msg
+          )
+        );
+        
+        // Création du message de réponse
+        const assistantMessage: Message = {
+          id: `msg-${Date.now()}-assistant`,
+          content: response.text,
+          timestamp: new Date(),
+          direction: 'incoming',
+          audioUrl: response.audioUrl
+        };
+        
+        if (!sentMessagesRef.current.has(assistantMessage.id)) {
+          setMessages(prev => [...prev, assistantMessage]);
+          await sendMessageToCurrentUser(response.text);
+          sentMessagesRef.current.add(assistantMessage.id);
+        }
+      } catch (audioProcessingError) {
+        console.error("Erreur lors du traitement audio, tentative de repli texte:", audioProcessingError);
+        
+        // Mise à jour du message utilisateur pour indiquer le problème
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === messageId 
+              ? { ...msg, content: "Message vocal (traitement de secours)" }
+              : msg
+          )
+        );
+        
+        // Tentative de traitement texte sans audio
+        const fallbackResponse = await generateResponse(
+          "L'utilisateur a envoyé un message vocal qui n'a pas pu être traité. Merci de lui demander de réessayer ou d'envoyer un message texte.", 
+          {
+            generateAudio: false,
+            phoneNumber,
+            isAudioInput: false
+          }
+        );
+        
+        const fallbackMessage: Message = {
+          id: `msg-${Date.now()}-assistant-fallback`,
+          content: fallbackResponse.text,
+          timestamp: new Date(),
+          direction: 'incoming'
+        };
+        
+        if (!sentMessagesRef.current.has(fallbackMessage.id)) {
+          setMessages(prev => [...prev, fallbackMessage]);
+          await sendMessageToCurrentUser(fallbackResponse.text);
+          sentMessagesRef.current.add(fallbackMessage.id);
+        }
       }
     } catch (error) {
       console.error('Erreur lors du traitement du message audio:', error);
       
+      // Amélioration du message d'erreur
       let errorMessage = "Une erreur est survenue lors du traitement du message audio";
       
       if (error instanceof Error) {
-        if ('details' in error && typeof (error as any).details === 'string') {
-          errorMessage = (error as any).details;
-        } else if (error.message) {
+        if (error.message.includes("reconnaissance vocale est désactivée")) {
+          errorMessage = "La reconnaissance vocale est désactivée dans vos paramètres. Veuillez l'activer dans les réglages ou envoyer un message texte.";
+        } else if (error.message.includes("trop court")) {
+          errorMessage = "L'enregistrement audio est trop court. Veuillez parler plus longtemps.";
+        } else if (error.message.includes("trop volumineux")) {
+          errorMessage = "L'enregistrement audio est trop long. Veuillez enregistrer un message plus court.";
+        } else if (error.message.includes("invalide") || error.message.includes("incomplet")) {
+          errorMessage = "Format audio non reconnu. Veuillez réessayer.";
+        } else {
           errorMessage = error.message;
-        }
-      } else if (typeof error === 'object' && error !== null) {
-        if ('message' in error) {
-          errorMessage = (error as { message: string }).message;
-        } else if ('details' in error) {
-          errorMessage = String((error as { details: unknown }).details);
         }
       }
       
       setError(errorMessage);
       
+      // Mise à jour du message utilisateur pour indiquer l'erreur
       setMessages(prev => 
         prev.map(msg => 
           msg.id === messageId 
@@ -226,6 +337,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         )
       );
       
+      // Message d'erreur de l'assistant
       const errorResponse: Message = {
         id: `msg-${Date.now()}-error`,
         content: `Désolé, une erreur s'est produite: ${errorMessage}`,
@@ -235,6 +347,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       
       if (!sentMessagesRef.current.has(errorResponse.id)) {
         setMessages(prev => [...prev, errorResponse]);
+        await sendMessageToCurrentUser(errorResponse.content).catch(err => {
+          console.error("Erreur lors de l'envoi du message d'erreur:", err);
+        });
         sentMessagesRef.current.add(errorResponse.id);
       }
     } finally {
@@ -242,6 +357,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     }
   };
   
+  // Envoi d'un message texte
   const handleSendMessage = async () => {
     if (!inputValue.trim()) {
       console.log("Message vide, annulation de l'envoi");
@@ -281,6 +397,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     sentMessagesRef.current.add(userMessage.id);
     
     try {
+      // Traitement spécial pour la commande "connecter email"
       if (messageToSend.toLowerCase().includes('connecter email')) {
         console.log("Détection de la commande 'connecter email'");
         try {
@@ -326,6 +443,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         }
       }
 
+      // Vérification et récupération des paramètres utilisateur
       console.log("Vérification des paramètres utilisateur");
       const { data: settings, error: settingsError } = await supabase
         .from('user_settings')
@@ -338,6 +456,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         throw new Error('Erreur lors de la récupération des paramètres: ' + settingsError.message);
       }
 
+      // Création des paramètres par défaut si non existants
       if (!settings) {
         console.log("Aucun paramètre trouvé, création par défaut");
         const { error: insertError } = await supabase
@@ -356,6 +475,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
         }
       }
 
+      // Génération d'une réponse via Claude
       console.log("Génération d'une réponse Claude");
       const response = await generateResponse(messageToSend, {
         generateAudio: settings?.audio_enabled ?? isAudioEnabled,
@@ -365,6 +485,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       
       console.log("Réponse générée avec succès");
       
+      // Création du message de réponse
       const assistantMessage: Message = {
         id: `msg-${Date.now()}-assistant`,
         content: response.text,
@@ -392,9 +513,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
       
       setError(errorMessage);
       
+      // Suppression du message utilisateur en cas d'erreur
       setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
       sentMessagesRef.current.delete(userMessage.id);
       
+      // Message d'erreur de l'assistant
       const errorResponse: Message = {
         id: `msg-${Date.now()}-error`,
         content: `Désolé, une erreur s'est produite: ${errorMessage}`,
@@ -408,6 +531,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ phoneNumber }) => {
     }
   };
   
+  // Gestion de l'appui sur Entrée pour envoyer
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
