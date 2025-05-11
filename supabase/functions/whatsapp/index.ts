@@ -7,27 +7,70 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-// Utilitaire de logs
+// Utilitaire de logs amélioré
 const log = (level: string, message: string, data?: any) => {
-  console[level](`[WhatsApp] ${message}`, data || '');
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    level,
+    message,
+    data: data || null
+  };
+  console[level](JSON.stringify(logEntry));
 };
 
 // Fonction pour envoyer un message WhatsApp via l'API Meta
 async function sendWhatsAppMessage(to: string, message: string) {
+  // Vérification et récupération des variables d'environnement
   const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
   const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
   const apiVersion = Deno.env.get("WHATSAPP_API_VERSION") || "v17.0";
   
-  if (!phoneNumberId || !accessToken) {
-    throw new Error("Configuration WhatsApp manquante (ID ou token)");
+  // Vérifications détaillées des variables d'environnement
+  if (!phoneNumberId) {
+    throw new Error("Configuration WhatsApp manquante: WHATSAPP_PHONE_NUMBER_ID");
+  }
+  
+  if (!accessToken) {
+    throw new Error("Configuration WhatsApp manquante: WHATSAPP_ACCESS_TOKEN");
+  }
+  
+  // Validation des données d'entrée
+  if (!to || typeof to !== 'string') {
+    throw new Error("Numéro de destination manquant ou invalide");
+  }
+  
+  if (!message || typeof message !== 'string') {
+    throw new Error("Message manquant ou invalide");
   }
   
   // Formater le numéro sans le + pour l'API WhatsApp
   const formattedTo = to.startsWith('+') ? to.substring(1) : to;
   
   try {
-    log("info", `Envoi message WhatsApp à ${formattedTo}`, { messageLength: message.length });
+    log("info", `Envoi message WhatsApp`, { 
+      to: formattedTo,
+      messageLength: message.length,
+      messagePreview: message.substring(0, 50) + (message.length > 50 ? "..." : "")
+    });
     
+    // Création du corps de la requête
+    const requestBody = JSON.stringify({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: formattedTo,
+      type: "text",
+      text: { 
+        body: message
+      }
+    });
+    
+    log("info", "Requête API WhatsApp préparée", {
+      url: `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
+      method: "POST",
+      bodyLength: requestBody.length
+    });
+    
+    // Envoi de la requête à l'API WhatsApp
     const response = await fetch(
       `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
       {
@@ -36,121 +79,68 @@ async function sendWhatsAppMessage(to: string, message: string) {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${accessToken}`
         },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          recipient_type: "individual",
-          to: formattedTo,
-          type: "text",
-          text: { 
-            body: message
-          }
-        })
+        body: requestBody
       }
     );
     
-    // Obtenir la réponse complète pour le débogage
+    // Récupération complète du corps de la réponse
     const responseText = await response.text();
-    log("info", "Réponse brute de l'API WhatsApp:", { 
-      status: response.status, 
-      responsePreview: responseText.substring(0, 200) 
+    
+    log("info", "Réponse API WhatsApp reçue", { 
+      status: response.status,
+      statusText: response.statusText,
+      responseLength: responseText.length,
+      responsePreview: responseText.substring(0, 200) + (responseText.length > 200 ? "..." : "")
     });
     
-    // Parser la réponse JSON
-    let data;
+    // Tentative de parsing du JSON
+    let data: any = {};
     try {
       data = JSON.parse(responseText);
-    } catch (e) {
-      log("warn", "Impossible de parser la réponse JSON", { error: e });
-      // Créer un objet avec les informations disponibles
+    } catch (parseError) {
+      log("warn", "La réponse n'est pas un JSON valide", { 
+        error: parseError instanceof Error ? parseError.message : String(parseError)
+      });
+      
+      // Si le parsing échoue, créer un objet avec les informations disponibles
       data = { 
-        status: response.status, 
+        status: response.status,
         rawResponse: responseText.substring(0, 500)
       };
     }
     
+    // Gestion des erreurs dans la réponse
     if (!response.ok) {
+      // Extraction des détails d'erreur pour un message plus informatif
       const errorDetails = data.error ? 
         `${data.error.type || 'Unknown'}: ${data.error.message || 'No message'}` : 
         `Status ${response.status}`;
       
-      throw new Error(`Erreur API WhatsApp: ${errorDetails}`);
+      log("error", `Erreur API WhatsApp`, {
+        status: response.status,
+        details: errorDetails,
+        data: data
+      });
+      
+      throw new Error(`Erreur API WhatsApp (${response.status}): ${errorDetails}`);
     }
     
+    // Log du succès
     log("info", "Message WhatsApp envoyé avec succès", { 
       messageId: data?.messages?.[0]?.id || 'unknown' 
     });
     
     return data;
   } catch (error) {
-    log("error", "Erreur lors de l'envoi du message WhatsApp:", error);
+    // Log détaillé de l'erreur
+    log("error", "Erreur lors de l'envoi du message WhatsApp", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : null,
+      to: formattedTo
+    });
+    
+    // Relance de l'erreur pour être traitée par l'appelant
     throw error;
-  }
-}
-
-// Fonction pour envoyer un indicateur de saisie
-async function sendTypingIndicator(to: string): Promise<void> {
-  const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
-  const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
-  const apiVersion = Deno.env.get("WHATSAPP_API_VERSION") || "v17.0";
-  
-  if (!phoneNumberId || !accessToken) {
-    log("warn", "Configuration WhatsApp manquante pour l'indicateur de saisie");
-    return;
-  }
-  
-  // Formater le numéro sans le + pour l'API WhatsApp
-  const formattedTo = to.startsWith('+') ? to.substring(1) : to;
-  
-  try {
-    log("info", `Envoi indicateur de saisie à ${formattedTo}`);
-    
-    const response = await fetch(
-      `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${accessToken}`
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          recipient_type: "individual",
-          to: formattedTo,
-          type: "interactive",
-          interactive: {
-            type: "button",
-            body: {
-              text: "..."
-            },
-            action: {
-              buttons: [
-                {
-                  type: "reply",
-                  reply: {
-                    id: "typing",
-                    title: "Typing"
-                  }
-                }
-              ]
-            }
-          }
-        })
-      }
-    );
-    
-    const responseText = await response.text();
-    
-    if (!response.ok) {
-      log("warn", `Échec de l'envoi de l'indicateur de saisie:`, {
-        status: response.status,
-        response: responseText.substring(0, 200)
-      });
-    } else {
-      log("info", "Indicateur de saisie envoyé avec succès");
-    }
-  } catch (error) {
-    log("warn", "Erreur lors de l'envoi de l'indicateur de saisie:", error);
-    // Nous ignorons l'erreur car l'indicateur de saisie est optionnel
   }
 }
 
@@ -165,20 +155,25 @@ serve(async (req) => {
   }
 
   try {
-    // Vérification de l'existence des variables d'environnement
-    const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
-    const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
+    // Log de la requête entrante
+    log("info", `Requête reçue`, { 
+      method: req.method,
+      url: req.url,
+      headers: Object.fromEntries([...req.headers.entries()].filter(([key]) => !key.includes('auth')))
+    });
     
-    if (!phoneNumberId || !accessToken) {
-      log("error", "Configuration WhatsApp manquante", { 
-        hasPhoneNumberId: !!phoneNumberId, 
-        hasAccessToken: !!accessToken
-      });
+    // Vérification rapide des variables d'environnement
+    const missingVars = [];
+    if (!Deno.env.get("WHATSAPP_PHONE_NUMBER_ID")) missingVars.push("WHATSAPP_PHONE_NUMBER_ID");
+    if (!Deno.env.get("WHATSAPP_ACCESS_TOKEN")) missingVars.push("WHATSAPP_ACCESS_TOKEN");
+    
+    if (missingVars.length > 0) {
+      log("error", "Variables d'environnement manquantes", { missing: missingVars });
       
       return new Response(
         JSON.stringify({
           error: "Configuration WhatsApp manquante",
-          details: "Les variables d'environnement WHATSAPP_PHONE_NUMBER_ID et WHATSAPP_ACCESS_TOKEN doivent être définies"
+          details: `Les variables suivantes doivent être définies: ${missingVars.join(', ')}`
         }),
         {
           status: 500,
@@ -188,11 +183,39 @@ serve(async (req) => {
     }
     
     // Parsing du corps de la requête
-    const { to, message } = await req.json();
+    let body;
+    try {
+      body = await req.json();
+      log("info", "Corps de la requête", { 
+        hasTo: !!body.to,
+        hasMessage: !!body.message,
+        messageLength: body.message?.length
+      });
+    } catch (parseError) {
+      log("error", "Erreur lors du parsing du corps de la requête", { 
+        error: parseError instanceof Error ? parseError.message : String(parseError)
+      });
+      
+      return new Response(
+        JSON.stringify({ 
+          error: "Format de requête invalide", 
+          details: "Le corps de la requête doit être un objet JSON valide avec 'to' et 'message'"
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
+    }
+    
+    // Validation des paramètres requis
+    const { to, message } = body;
     
     if (!to || !message) {
+      log("error", "Paramètres manquants", { has: { to: !!to, message: !!message } });
+      
       return new Response(
-        JSON.stringify({ error: "Le numéro de téléphone et le message sont requis" }),
+        JSON.stringify({ error: "Le numéro de téléphone (to) et le message sont requis" }),
         {
           status: 400,
           headers: { "Content-Type": "application/json", ...corsHeaders },
@@ -200,21 +223,12 @@ serve(async (req) => {
       );
     }
 
-    log("info", `Requête d'envoi de message à ${to}`, { 
-      messagePreview: message.substring(0, 50) + (message.length > 50 ? "..." : "") 
-    });
-    
-    // Optionnel: envoyer l'indicateur de saisie avant le message
-    try {
-      await sendTypingIndicator(to);
-    } catch (typingError) {
-      log("warn", "Erreur lors de l'envoi de l'indicateur de saisie (non bloquant):", typingError);
-    }
-    
-    // Envoyer le message principal
+    // Envoi du message
     const result = await sendWhatsAppMessage(to, message);
     
     // Réponse avec succès
+    log("info", "Traitement réussi", { result });
+    
     return new Response(
       JSON.stringify({ 
         success: true, 
@@ -227,7 +241,10 @@ serve(async (req) => {
     );
   } catch (error) {
     // Journalisation détaillée de l'erreur
-    log("error", "Erreur lors du traitement de la requête:", error);
+    log("error", "Erreur non gérée lors du traitement de la requête", {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : null
+    });
     
     // Réponse avec erreur
     return new Response(
