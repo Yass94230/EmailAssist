@@ -18,10 +18,12 @@ export async function generateResponse(
   options: GenerateResponseOptions
 ): Promise<GenerateResponseResult> {
   try {
-    const response = await fetch(`${import.meta.env.VITE_API_URL}/claude`, {
+    // Use Supabase Functions URL instead of custom API URL
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/claude`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
       },
       body: JSON.stringify({
         prompt,
@@ -30,7 +32,11 @@ export async function generateResponse(
     });
 
     if (!response.ok) {
-      throw new Error(`Error: ${response.status}`);
+      const errorData = await response.json().catch(() => null);
+      throw new Error(
+        errorData?.error || 
+        `Error ${response.status}: ${response.statusText}`
+      );
     }
 
     const data = await response.json();
@@ -40,6 +46,10 @@ export async function generateResponse(
     };
   } catch (error) {
     console.error('Error in generateResponse:', error);
-    throw error;
+    throw new Error(
+      error instanceof Error 
+        ? error.message 
+        : 'Une erreur est survenue lors de la génération de la réponse'
+    );
   }
 }
