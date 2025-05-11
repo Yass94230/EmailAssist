@@ -19,33 +19,29 @@ const MAX_AUDIO_SIZE = 10 * 1024 * 1024;
 // Validation du format des données audio
 function isValidAudioData(data: string): boolean {
   try {
-    // Vérifie si c'est une chaîne base64 valide
-    const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-    if (!base64Regex.test(data)) {
+    // Vérification basique d'une chaîne base64 valide
+    if (!data || data.length < 100) {
+      console.warn("Données audio trop courtes ou vides");
       return false;
     }
 
-    // Vérifie la taille minimale (pour éviter les enregistrements trop courts)
-    const MIN_SIZE = 1000; // 1KB
-    if (data.length < MIN_SIZE) {
-      return false;
-    }
-
-    // Vérifie si les données commencent par un en-tête audio valide
-    const decodedData = atob(data);
-    const header = decodedData.slice(0, 4);
+    // Vérifier si c'est une chaîne base64 valide avec une expression régulière plus permissive
+    const base64Regex = /^[A-Za-z0-9+/]*={0,3}$/;
+    const isBase64Valid = base64Regex.test(data);
     
-    // En-têtes valides pour WebM et MP3
-    const validHeaders = [
-      'OggS', // Ogg
-      '\x1AE\xDF\xA3', // WebM
-      'ID3', // MP3
-      'RIFF' // WAV
-    ];
+    if (!isBase64Valid) {
+      console.warn("Format base64 invalide");
+      return false;
+    }
 
-    return validHeaders.some(validHeader => 
-      header.includes(validHeader) || decodedData.includes(validHeader)
-    );
+    // Vérification de la taille maximale (10MB)
+    const estimatedSize = Math.ceil(data.length * 0.75); // Approximation de la taille en octets
+    if (estimatedSize > 10 * 1024 * 1024) {
+      console.warn("Fichier audio trop volumineux:", estimatedSize, "octets");
+      return false;
+    }
+
+    return true;
   } catch (e) {
     console.error('Erreur lors de la validation audio:', e);
     return false;
@@ -57,13 +53,13 @@ export async function generateResponse(
   options: GenerateResponseOptions
 ): Promise<GenerateResponseResult> {
   try {
-    console.log("Envoi de la requête à l'API Claude avec les options :", {
-      longueurPrompt: prompt.length,
-      estEntréeAudio: options.isAudioInput,
-      contientAudio: !!options.audioData,
-      generateAudio: options.generateAudio,
-      voiceType: options.voiceType,
-      phoneNumber: options.phoneNumber ? options.phoneNumber.substring(0, 4) + '****' : 'non défini'
+    console.log("Génération d'une réponse Claude avec les paramètres:", {
+      longuerPrompt: prompt.length, 
+      estEntreeAudio: options.isAudioInput,
+      audioPresent: !!options.audioData,
+      audioTaille: options.audioData ? `${Math.floor(options.audioData.length / 1000)}KB` : 'N/A',
+      genererAudio: options.generateAudio,
+      typeVoix: options.voiceType
     });
 
     // Validation améliorée des données audio
