@@ -7,146 +7,36 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-// Utilitaire de logs amélioré
+// Fonction de logging améliorée
 const log = (level: string, message: string, data?: any) => {
-  const logEntry = {
+  const entry = {
     timestamp: new Date().toISOString(),
     level,
     message,
     data: data || null
   };
-  console[level](JSON.stringify(logEntry));
+  console[level](JSON.stringify(entry));
 };
 
-// Fonction pour envoyer un message WhatsApp via l'API Meta
-async function sendWhatsAppMessage(to: string, message: string) {
-  // Vérification et récupération des variables d'environnement
-  const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
-  const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
-  const apiVersion = Deno.env.get("WHATSAPP_API_VERSION") || "v17.0";
+// Vérification des variables d'environnement requises
+function checkRequiredEnvVars() {
+  const required = [
+    "WHATSAPP_ACCESS_TOKEN",
+    "WHATSAPP_PHONE_NUMBER_ID"
+  ];
   
-  // Vérifications détaillées des variables d'environnement
-  if (!phoneNumberId) {
-    throw new Error("Configuration WhatsApp manquante: WHATSAPP_PHONE_NUMBER_ID");
+  const missing = required.filter(name => !Deno.env.get(name));
+  
+  if (missing.length > 0) {
+    log("error", "Variables d'environnement requises manquantes", { missing });
+    return false;
   }
   
-  if (!accessToken) {
-    throw new Error("Configuration WhatsApp manquante: WHATSAPP_ACCESS_TOKEN");
-  }
-  
-  // Validation des données d'entrée
-  if (!to || typeof to !== 'string') {
-    throw new Error("Numéro de destination manquant ou invalide");
-  }
-  
-  if (!message || typeof message !== 'string') {
-    throw new Error("Message manquant ou invalide");
-  }
-  
-  // Formater le numéro sans le + pour l'API WhatsApp
-  const formattedTo = to.startsWith('+') ? to.substring(1) : to;
-  
-  try {
-    log("info", `Envoi message WhatsApp`, { 
-      to: formattedTo,
-      messageLength: message.length,
-      messagePreview: message.substring(0, 50) + (message.length > 50 ? "..." : "")
-    });
-    
-    // Création du corps de la requête
-    const requestBody = JSON.stringify({
-      messaging_product: "whatsapp",
-      recipient_type: "individual",
-      to: formattedTo,
-      type: "text",
-      text: { 
-        body: message
-      }
-    });
-    
-    log("info", "Requête API WhatsApp préparée", {
-      url: `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
-      method: "POST",
-      bodyLength: requestBody.length
-    });
-    
-    // Envoi de la requête à l'API WhatsApp
-    const response = await fetch(
-      `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${accessToken}`
-        },
-        body: requestBody
-      }
-    );
-    
-    // Récupération complète du corps de la réponse
-    const responseText = await response.text();
-    
-    log("info", "Réponse API WhatsApp reçue", { 
-      status: response.status,
-      statusText: response.statusText,
-      responseLength: responseText.length,
-      responsePreview: responseText.substring(0, 200) + (responseText.length > 200 ? "..." : "")
-    });
-    
-    // Tentative de parsing du JSON
-    let data: any = {};
-    try {
-      data = JSON.parse(responseText);
-    } catch (parseError) {
-      log("warn", "La réponse n'est pas un JSON valide", { 
-        error: parseError instanceof Error ? parseError.message : String(parseError)
-      });
-      
-      // Si le parsing échoue, créer un objet avec les informations disponibles
-      data = { 
-        status: response.status,
-        rawResponse: responseText.substring(0, 500)
-      };
-    }
-    
-    // Gestion des erreurs dans la réponse
-    if (!response.ok) {
-      // Extraction des détails d'erreur pour un message plus informatif
-      const errorDetails = data.error ? 
-        `${data.error.type || 'Unknown'}: ${data.error.message || 'No message'}` : 
-        `Status ${response.status}`;
-      
-      log("error", `Erreur API WhatsApp`, {
-        status: response.status,
-        details: errorDetails,
-        data: data
-      });
-      
-      throw new Error(`Erreur API WhatsApp (${response.status}): ${errorDetails}`);
-    }
-    
-    // Log du succès
-    log("info", "Message WhatsApp envoyé avec succès", { 
-      messageId: data?.messages?.[0]?.id || 'unknown' 
-    });
-    
-    return data;
-  } catch (error) {
-    // Log détaillé de l'erreur
-    log("error", "Erreur lors de l'envoi du message WhatsApp", {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : null,
-      to: formattedTo
-    });
-    
-    // Relance de l'erreur pour être traitée par l'appelant
-    throw error;
-  }
+  return true;
 }
 
-// Point d'entrée principal
-serve(async (req) => {
-  // Gestion CORS pour les requêtes preflight
+Deno.serve(async (req) => {
+  // Gestion des requêtes preflight CORS
   if (req.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
@@ -154,42 +44,28 @@ serve(async (req) => {
     });
   }
 
+  log("info", "Function d'envoi WhatsApp appelée", { method: req.method });
+
   try {
-    // Log de la requête entrante
-    log("info", `Requête reçue`, { 
-      method: req.method,
-      url: req.url,
-      headers: Object.fromEntries([...req.headers.entries()].filter(([key]) => !key.includes('auth')))
-    });
-    
-    // Vérification rapide des variables d'environnement
-    const missingVars = [];
-    if (!Deno.env.get("WHATSAPP_PHONE_NUMBER_ID")) missingVars.push("WHATSAPP_PHONE_NUMBER_ID");
-    if (!Deno.env.get("WHATSAPP_ACCESS_TOKEN")) missingVars.push("WHATSAPP_ACCESS_TOKEN");
-    
-    if (missingVars.length > 0) {
-      log("error", "Variables d'environnement manquantes", { missing: missingVars });
-      
+    // Vérification des variables d'environnement
+    if (!checkRequiredEnvVars()) {
       return new Response(
-        JSON.stringify({
-          error: "Configuration WhatsApp manquante",
-          details: `Les variables suivantes doivent être définies: ${missingVars.join(', ')}`
-        }),
+        JSON.stringify({ error: "Configuration incomplète du serveur" }),
         {
           status: 500,
           headers: { "Content-Type": "application/json", ...corsHeaders },
         }
       );
     }
-    
-    // Parsing du corps de la requête
+
+    // Parse request body
     let body;
     try {
       body = await req.json();
-      log("info", "Corps de la requête", { 
-        hasTo: !!body.to,
+      log("info", "Corps de la requête reçu", { 
+        hasTo: !!body.to, 
         hasMessage: !!body.message,
-        messageLength: body.message?.length
+        messagePreview: body.message ? body.message.substring(0, 30) + "..." : null
       });
     } catch (parseError) {
       log("error", "Erreur lors du parsing du corps de la requête", { 
@@ -223,33 +99,107 @@ serve(async (req) => {
       );
     }
 
-    // Envoi du message
-    const result = await sendWhatsAppMessage(to, message);
+    // Formater le numéro sans le + pour l'API WhatsApp si nécessaire
+    const formattedTo = to.startsWith('+') ? to.substring(1) : to;
     
-    // Réponse avec succès
-    log("info", "Traitement réussi", { result });
+    // Récupérer les variables d'environnement nécessaires
+    const phoneNumberId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
+    const accessToken = Deno.env.get("WHATSAPP_ACCESS_TOKEN");
+    const apiVersion = Deno.env.get("WHATSAPP_API_VERSION") || "v18.0";
+    
+    // Construction correcte du corps de la requête
+    const requestBody = JSON.stringify({
+      messaging_product: "whatsapp", // IMPORTANT: Ce paramètre est requis
+      recipient_type: "individual",
+      to: formattedTo,
+      type: "text",
+      text: { 
+        body: message
+      }
+    });
+    
+    log("info", "Envoi de message WhatsApp", {
+      to: formattedTo,
+      messageLength: message.length,
+      messagePreview: message.substring(0, 50) + (message.length > 50 ? "..." : ""),
+      url: `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`
+    });
+    
+    const response = await fetch(
+      `https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`
+        },
+        body: requestBody
+      }
+    );
+    
+    // Récupérer et journaliser la réponse
+    let responseData;
+    let responseText = "";
+    
+    try {
+      responseText = await response.text();
+      responseData = JSON.parse(responseText);
+      log("info", "Réponse WhatsApp API", {
+        status: response.status,
+        data: responseData
+      });
+    } catch (e) {
+      log("warn", "Impossible de parser la réponse JSON", { 
+        status: response.status, 
+        text: responseText 
+      });
+      responseData = { raw: responseText };
+    }
+    
+    if (!response.ok) {
+      log("error", "Erreur API WhatsApp", {
+        status: response.status,
+        statusText: response.statusText,
+        data: responseData
+      });
+      
+      return new Response(
+        JSON.stringify({
+          error: "Erreur lors de l'envoi du message WhatsApp",
+          details: responseData,
+          status: response.status
+        }),
+        {
+          status: response.status,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
+    }
+    
+    log("info", "Message WhatsApp envoyé avec succès", {
+      to: formattedTo,
+      messageId: responseData.messages?.[0]?.id
+    });
     
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        message: "Message WhatsApp envoyé avec succès", 
-        data: result
+      JSON.stringify({
+        success: true,
+        message: "Message WhatsApp envoyé avec succès",
+        data: responseData
       }),
       {
         headers: { "Content-Type": "application/json", ...corsHeaders },
       }
     );
   } catch (error) {
-    // Journalisation détaillée de l'erreur
-    log("error", "Erreur non gérée lors du traitement de la requête", {
+    log("error", "Erreur non gérée", {
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : null
     });
     
-    // Réponse avec erreur
     return new Response(
       JSON.stringify({ 
-        error: "Erreur lors de l'envoi du message WhatsApp", 
+        error: "Erreur serveur lors de l'envoi du message WhatsApp", 
         details: error instanceof Error ? error.message : String(error)
       }),
       {
