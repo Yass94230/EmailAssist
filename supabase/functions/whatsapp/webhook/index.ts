@@ -23,6 +23,7 @@ function checkRequiredEnvVars() {
   const required = [
     "WHATSAPP_ACCESS_TOKEN",
     "WHATSAPP_VERIFY_TOKEN",
+    "WHATSAPP_PHONE_NUMBER_ID",
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY"
   ];
@@ -71,9 +72,12 @@ Deno.serve(async (req) => {
     });
   }
 
+  log("info", "----------------------");
+  log("info", "WEBHOOK WhatsApp APPELÉ");
+  log("info", `URL: ${req.url}`);
+  log("info", `Méthode: ${req.method}`);
+
   try {
-    log("info", "Traitement d'un webhook WhatsApp entrant (Meta API)");
-    
     // Vérification des variables d'environnement
     if (!checkRequiredEnvVars()) {
       return new Response(
@@ -88,7 +92,6 @@ Deno.serve(async (req) => {
     // Vérifier signature du webhook si présente
     const signature = req.headers.get('x-hub-signature-256');
     if (signature) {
-      // Note: Implémentation facultative de vérification de signature
       log("info", "Signature webhook reçue", { signature });
     }
     
@@ -97,6 +100,8 @@ Deno.serve(async (req) => {
     const mode = url.searchParams.get("hub.mode");
     const token = url.searchParams.get("hub.verify_token");
     const challenge = url.searchParams.get("hub.challenge");
+    
+    log("info", "Paramètres d'URL", { mode, hasToken: !!token, challenge });
     
     // Gestion de la vérification de webhook
     if (mode === "subscribe" && token) {
@@ -115,8 +120,29 @@ Deno.serve(async (req) => {
     }
 
     // Traitement des messages entrants
-    const webhookData = await req.json();
-    log("info", "Données webhook reçues", webhookData);
+    let webhookData;
+    try {
+      webhookData = await req.json();
+      log("info", "Données webhook reçues", webhookData);
+    } catch (e) {
+      log("error", "Erreur de parsing JSON", { error: e instanceof Error ? e.message : String(e) });
+      
+      // Essayer de récupérer le texte brut
+      try {
+        const text = await req.text();
+        log("info", "Contenu texte brut", { text: text.substring(0, 500) });
+      } catch (textError) {
+        log("error", "Impossible de lire le contenu de la requête", { error: textError instanceof Error ? textError.message : String(textError) });
+      }
+      
+      return new Response("EVENT_RECEIVED", { status: 200 });
+    }
+    
+    // Vérifier si c'est un message WhatsApp
+    if (webhookData.object !== "whatsapp_business_account") {
+      log("info", "Objet non reconnu, ignorer", { object: webhookData.object });
+      return new Response("EVENT_RECEIVED", { status: 200 });
+    }
     
     // Pour l'API Meta, les données sont structurées différemment
     const entries = webhookData.entry || [];
@@ -150,8 +176,91 @@ Deno.serve(async (req) => {
               messageType: message.type
             });
             
-            // Gérer les différents types de messages
-            if (message.type === "audio") {
+            // Traiter selon le type de message
+            if (message.type === "text") {
+              const text = message.text?.body;
+              log("info", "Message texte détecté", { text, senderNumber });
+              
+              // Envoyer message de confirmation
+              try {
+                await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`
+                  },
+                  body: JSON.stringify({
+                    to: senderNumber,
+                    message: `J'ai bien reçu votre message: "${text}". Traitement en cours...`
+                  })
+                });
+                
+                log("info", "Message de confirmation envoyé");
+              } catch (e) {
+                log("error", "Échec de l'envoi de la confirmation", { error: e instanceof Error ? e.message : String(e) });
+              }
+              
+              // Traitement du message texte avec Claude
+              try {
+                log("info", "Envoi du message texte à Claude");
+                const claudeResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/claude`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`
+                  },
+                  body: JSON.stringify({
+                    prompt: text,
+                    phoneNumber: senderNumber,
+                    generateAudio: true
+                  })
+                });
+                
+                if (!claudeResponse.ok) {
+                  const errorText = await claudeResponse.text();
+                  log("error", "Erreur lors de l'appel à Claude pour le texte", { 
+                    status: claudeResponse.status, 
+                    response: errorText
+                  });
+                  throw new Error(`Erreur Claude: ${claudeResponse.status} - ${errorText}`);
+                }
+                
+                const claudeData = await claudeResponse.json();
+                log("info", "Réponse Claude reçue pour le message texte", {
+                  responseLength: claudeData.response.length,
+                  hasAudio: !!claudeData.audio
+                });
+                
+                // Envoi de la réponse Claude
+                const whatsappResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`
+                  },
+                  body: JSON.stringify({
+                    to: senderNumber,
+                    message: claudeData.response
+                  })
+                });
+                
+                if (!whatsappResponse.ok) {
+                  const errorText = await whatsappResponse.text();
+                  log("error", "Erreur lors de l'envoi de la réponse au message texte", { 
+                    status: whatsappResponse.status, 
+                    response: errorText
+                  });
+                } else {
+                  log("info", "Réponse au message texte envoyée avec succès");
+                }
+              } catch (textError) {
+                log("error", "Erreur lors du traitement du message texte", { 
+                  error: textError instanceof Error ? textError.message : String(textError),
+                  stack: textError instanceof Error ? textError.stack : null
+                });
+              }
+            } 
+            else if (message.type === "audio") {
               const audioId = message.audio?.id;
               
               if (!audioId) {
@@ -160,6 +269,24 @@ Deno.serve(async (req) => {
               }
               
               log("info", "Message audio détecté", { audioId, senderNumber, messageId });
+              
+              // Envoyer message de confirmation pour audio
+              try {
+                await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp`, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`
+                  },
+                  body: JSON.stringify({
+                    to: senderNumber,
+                    message: "J'ai bien reçu votre message audio. Traitement en cours..."
+                  })
+                });
+                log("info", "Message de confirmation pour audio envoyé");
+              } catch (e) {
+                log("error", "Échec de l'envoi de confirmation audio", { error: e instanceof Error ? e.message : String(e) });
+              }
               
               try {
                 // 1. Récupérer le fichier audio depuis l'API Media
@@ -240,8 +367,8 @@ Deno.serve(async (req) => {
                 
                 // Déterminer le type MIME correct
                 const mimeType = mediaInfo.mime_type || 
-                                message.audio?.mime_type || 
-                                "audio/ogg"; // Fallback par défaut
+                               message.audio?.mime_type || 
+                               "audio/ogg"; // Fallback par défaut
                 
                 // 4. Préparation de l'appel à Claude
                 log("info", "Préparation de l'envoi à Claude", { 
@@ -339,103 +466,6 @@ Deno.serve(async (req) => {
                   });
                 }
               }
-            } 
-            // Traitement des messages texte
-            else if (message.type === "text") {
-              const messageBody = message.text?.body;
-              
-              if (!messageBody) {
-                log("warn", "Corps du message texte manquant", { message });
-                continue;
-              }
-              
-              log("info", "Message texte détecté", { 
-                messageBody, 
-                senderNumber,
-                messageId,
-                textLength: messageBody.length
-              });
-              
-              // Traitement du message texte avec Claude
-              try {
-                log("info", "Envoi du message texte à Claude");
-                const claudeResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/claude`, {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`
-                  },
-                  body: JSON.stringify({
-                    prompt: messageBody,
-                    phoneNumber: senderNumber,
-                    generateAudio: true
-                  })
-                });
-                
-                if (!claudeResponse.ok) {
-                  const errorText = await claudeResponse.text();
-                  log("error", "Erreur lors de l'appel à Claude pour le texte", { 
-                    status: claudeResponse.status, 
-                    response: errorText
-                  });
-                  throw new Error(`Erreur Claude: ${claudeResponse.status} - ${errorText}`);
-                }
-                
-                const claudeData = await claudeResponse.json();
-                log("info", "Réponse Claude reçue pour le message texte", {
-                  responseLength: claudeData.response.length,
-                  hasAudio: !!claudeData.audio
-                });
-                
-                // Envoi de la réponse
-                const whatsappResponse = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp`, {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`
-                  },
-                  body: JSON.stringify({
-                    to: senderNumber,
-                    message: claudeData.response
-                  })
-                });
-                
-                if (!whatsappResponse.ok) {
-                  const errorText = await whatsappResponse.text();
-                  log("error", "Erreur lors de l'envoi de la réponse au message texte", { 
-                    status: whatsappResponse.status, 
-                    response: errorText
-                  });
-                } else {
-                  log("info", "Réponse au message texte envoyée avec succès");
-                }
-              } catch (textError) {
-                log("error", "Erreur lors du traitement du message texte", { 
-                  error: textError instanceof Error ? textError.message : String(textError),
-                  stack: textError instanceof Error ? textError.stack : null,
-                  senderNumber,
-                  messageId
-                });
-                
-                // Notification d'erreur à l'utilisateur
-                try {
-                  await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp`, {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                      "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`
-                    },
-                    body: JSON.stringify({
-                      to: senderNumber,
-                      message: "Désolé, je n'ai pas pu traiter votre message. Veuillez réessayer."
-                    })
-                  });
-                } catch (notifyError) {
-                  log("error", "Échec de l'envoi du message d'erreur pour le texte", {
-                    error: notifyError instanceof Error ? notifyError.message : String(notifyError)
-                  });
-                }
-              }
             }
             // Autres types de messages (images, vidéos, etc.)
             else {
@@ -469,6 +499,8 @@ Deno.serve(async (req) => {
       }
     }
     
+    log("info", "----------------------");
+    
     // Réponse standard pour les webhooks Meta
     return new Response("EVENT_RECEIVED", { 
       status: 200,
@@ -481,14 +513,13 @@ Deno.serve(async (req) => {
       stack: error instanceof Error ? error.stack : null
     });
     
+    // Pour les webhooks, toujours renvoyer un statut 200 même en cas d'erreur
+    // pour que Meta ne considère pas le webhook comme défaillant
     return new Response(
-      JSON.stringify({ 
-        error: "Erreur lors du traitement du webhook", 
-        details: error instanceof Error ? error.message : String(error)
-      }),
+      "EVENT_RECEIVED",
       {
-        status: 500,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
+        status: 200,
+        headers: corsHeaders,
       }
     );
   }
