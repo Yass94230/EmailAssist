@@ -26,7 +26,7 @@
   to = "/.netlify/functions/whatsapp/webhook"
   status = 200
   force = true
-  headers = {Access-Control-Allow-Origin = "*", Access-Control-Allow-Headers = "*"}
+  headers = {Access-Control-Allow-Origin = "*", Access-Control-Allow-Headers = "*", Access-Control-Allow-Methods = "GET, POST, OPTIONS"}
 
 [[redirects]]
   from = "/*"
