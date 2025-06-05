@@ -152,7 +152,7 @@ export const sendMessage = async ({ to, message }: SendMessageParams): Promise<S
           if (statusCode === 429) {
             throw new Error("Rate limit reached. Please try again in a few minutes.");
           } else if (statusCode === 401 || statusCode === 403) {
-            throw new Error("Authentication error. Please log in again.");
+            throw new Error("The WhatsApp service is currently experiencing an authentication issue. Please try again later or contact support.");
           } else if (statusCode >= 500) {
             failureCount++;
             lastFailureTime = Date.now();
@@ -212,7 +212,7 @@ export const sendMessage = async ({ to, message }: SendMessageParams): Promise<S
       userMessage = "Too many messages sent. Please wait a few minutes before trying again.";
       retryAfter = 180;
     } else if (errorDetails.includes("authentication")) {
-      userMessage = "Your session has expired. Please log in again.";
+      userMessage = "The WhatsApp service is currently experiencing an authentication issue. Please try again later or contact support.";
     }
     
     return {
