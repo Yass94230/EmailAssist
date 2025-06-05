@@ -70,6 +70,7 @@ export interface TwilioResponse {
   success: boolean;
   message: string;
   sid?: string;
+  error?: string;
 }
 
 export interface AudioSettings {
