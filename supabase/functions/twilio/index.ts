@@ -3,8 +3,7 @@ import { Twilio } from "npm:twilio@4.23.0";
 interface TwilioRequest {
   to: string;
   message: string;
-  from: string;
-  channel: 'whatsapp';
+  channel?: 'whatsapp';
 }
 
 interface LogEntry {
@@ -17,7 +16,7 @@ interface LogEntry {
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
 const jsonHeaders = {
@@ -51,10 +50,10 @@ Deno.serve(async (req) => {
       throw new Error('Invalid JSON in request body');
     });
     
-    const { to, message, from, channel }: TwilioRequest = requestData;
+    const { to, message, channel }: TwilioRequest = requestData;
 
-    if (!to || !message || !from) {
-      const error = log('error', 'Paramètres manquants', { to, message, from });
+    if (!to || !message) {
+      const error = log('error', 'Paramètres manquants', { to, message });
       return new Response(
         JSON.stringify({ 
           error: "Le numéro de téléphone et le message sont requis",
@@ -68,14 +67,14 @@ Deno.serve(async (req) => {
     }
 
     const formattedTo = to.startsWith('+') ? to : `+${to}`;
-    const formattedFrom = from.startsWith('+') ? from : `+${from}`;
 
-    log('info', 'Numéros formatés', { formattedTo, formattedFrom });
+    log('info', 'Numéros formatés', { formattedTo });
 
     const accountSid = Deno.env.get("TWILIO_ACCOUNT_SID");
     const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+    const twilioNumber = Deno.env.get("TWILIO_WHATSAPP_NUMBER");
 
-    if (!accountSid || !authToken) {
+    if (!accountSid || !authToken || !twilioNumber) {
       const error = log('error', 'Identifiants Twilio manquants');
       return new Response(
         JSON.stringify({ 
@@ -98,10 +97,10 @@ Deno.serve(async (req) => {
     };
 
     if (channel === 'whatsapp') {
-      twilioParams.from = `whatsapp:${formattedFrom}`;
+      twilioParams.from = `whatsapp:${twilioNumber}`;
       twilioParams.to = `whatsapp:${formattedTo}`;
     } else {
-      twilioParams.from = formattedFrom;
+      twilioParams.from = twilioNumber;
       twilioParams.to = formattedTo;
     }
 

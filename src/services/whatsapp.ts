@@ -1,4 +1,4 @@
-// src/services/whatsapp.ts
+import { TwilioResponse } from '../types';
 
 interface SendMessageParams {
   to: string;
@@ -112,7 +112,7 @@ export const sendMessage = async ({ to, message }: SendMessageParams): Promise<S
     }
     
     const formattedTo = to.startsWith('+') ? to : `+${to}`;
-    const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp`;
+    const functionUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/twilio`;
     
     return await retry(async () => {
       const controller = new AbortController();
@@ -125,14 +125,18 @@ export const sendMessage = async ({ to, message }: SendMessageParams): Promise<S
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           },
-          body: JSON.stringify({ to: formattedTo, message }),
+          body: JSON.stringify({ 
+            to: formattedTo, 
+            message,
+            channel: 'whatsapp'
+          }),
           signal: controller.signal
         });
         
         clearTimeout(timeoutId);
         
         const responseText = await response.text();
-        console.log(`Supabase function response: ${response.status}`, {
+        console.log(`Twilio function response: ${response.status}`, {
           statusText: response.statusText,
           responsePreview: responseText.substring(0, 200)
         });
@@ -174,7 +178,7 @@ export const sendMessage = async ({ to, message }: SendMessageParams): Promise<S
         return {
           success: true,
           message: data.message || "Message sent successfully",
-          sid: data.data?.messages?.[0]?.id
+          sid: data.sid
         };
       } catch (fetchError) {
         clearTimeout(timeoutId);
