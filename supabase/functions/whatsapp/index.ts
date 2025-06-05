@@ -109,7 +109,7 @@ Deno.serve(async (req) => {
     
     // Construction correcte du corps de la requête
     const requestBody = JSON.stringify({
-      messaging_product: "whatsapp", // IMPORTANT: Ce paramètre est requis
+      messaging_product: "whatsapp",
       recipient_type: "individual",
       to: formattedTo,
       type: "text",
@@ -157,16 +157,42 @@ Deno.serve(async (req) => {
     }
     
     if (!response.ok) {
+      // Check specifically for authentication errors
+      if (response.status === 401) {
+        log("error", "Erreur d'authentification WhatsApp", {
+          status: response.status,
+          data: responseData
+        });
+        
+        return new Response(
+          JSON.stringify({
+            error: "Erreur d'authentification WhatsApp",
+            details: "Le token d'accès WhatsApp est invalide ou expiré. Veuillez vérifier vos identifiants.",
+            code: "AUTH_ERROR"
+          }),
+          {
+            status: 401,
+            headers: { "Content-Type": "application/json", ...corsHeaders },
+          }
+        );
+      }
+
+      // Handle other API errors
       log("error", "Erreur API WhatsApp", {
         status: response.status,
         statusText: response.statusText,
         data: responseData
       });
       
+      const errorMessage = responseData.error?.message || 
+                          responseData.error?.error_data?.details ||
+                          "Une erreur s'est produite lors de l'envoi du message";
+      
       return new Response(
         JSON.stringify({
           error: "Erreur lors de l'envoi du message WhatsApp",
-          details: responseData,
+          details: errorMessage,
+          code: responseData.error?.code || "API_ERROR",
           status: response.status
         }),
         {
